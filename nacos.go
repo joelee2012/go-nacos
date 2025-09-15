@@ -540,6 +540,25 @@ func (c *Client) GetPermission(ctx context.Context, role, resource, action strin
 	return nil, fmt.Errorf("404 Not Found %s:%s:%s", role, resource, action)
 }
 
+func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, body)
+	if err != nil {
+		return nil, err
+	}
+
+	if values != nil {
+		if method == http.MethodGet || method == http.MethodDelete {
+			req.URL.RawQuery = values.Encode()
+		} else {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if body == nil {
+				req.Body = io.NopCloser(strings.NewReader(values.Encode()))
+			}
+		}
+	}
+	return http.DefaultClient.Do(req)
+}
+
 // Service operations
 
 func checkStatus(resp *http.Response) error {
@@ -565,25 +584,6 @@ func checkErr(resp *http.Response, httpErr error) error {
 	return checkStatus(resp)
 }
 
-func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, body)
-	if err != nil {
-		return nil, err
-	}
-
-	if values != nil {
-		if method == http.MethodGet || method == http.MethodDelete {
-			req.URL.RawQuery = values.Encode()
-		} else {
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			if body == nil {
-				req.Body = io.NopCloser(strings.NewReader(values.Encode()))
-			}
-		}
-	}
-	return http.DefaultClient.Do(req)
-}
-
 func decode(resp *http.Response, httpErr error, v any) error {
 	if httpErr != nil {
 		return httpErr
@@ -595,14 +595,20 @@ func decode(resp *http.Response, httpErr error, v any) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-// type NacosErr struct {
-// 	StatusCode int
-// 	Err        error
-// 	URL        string
-// }
+type NacosErr struct {
+	Code int
+	Err  error
+	URL  string
+	Msg  string
+}
 
-// func (e *NacosErr) Error() string {
-// 	return fmt.Sprintf("%d %s: %s", e.StatusCode, e.URL, e.Err.Error())
-// }
+func (e NacosErr) Error() string {
+	return fmt.Sprintf("%d %s: %s", e.Code, e.URL, e.Err.Error())
+}
 
-// func (e *NacosErr) Unwrap() error { return e.Err }
+func (e NacosErr) Unwrap() error {
+	return e.Err
+}
+func (e NacosErr) NotFound() bool {
+	return e.Code == 404
+}
