@@ -110,11 +110,7 @@ func (c *Client) GetVersion(ctx context.Context) (string, error) {
 	if c.State != nil {
 		return c.Version, nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+api[c.APIVersion]["state"], nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
 	err = decode(resp, err, &c.State)
 	if err != nil {
 		return "", err
@@ -130,12 +126,7 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	v.Add("username", c.User)
 	v.Add("password", c.Password)
 	now := time.Now().Unix()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["token"], strings.NewReader(v.Encode()))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, nil)
 	err = decode(resp, err, &c.Token)
 	if err != nil {
 		return "", err
@@ -151,12 +142,7 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	}
 	v := url.Values{}
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["list_ns"], v.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, nil)
 	namespaces := new(NamespaceList)
 	err = decode(resp, err, namespaces)
 	return namespaces, err
@@ -178,12 +164,7 @@ func (c *Client) CreateNamespace(ctx context.Context, opts *CreateNsOpts) error 
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["ns"], strings.NewReader(v.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["ns"], v, nil)
 	return checkErr(resp, err)
 }
 
@@ -225,14 +206,7 @@ func (c *Client) UpdateNamespace(ctx context.Context, opts *CreateNsOpts) error 
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["ns"], v.Encode())
-	req, err := http.NewRequest(http.MethodPut, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPut, api[c.APIVersion]["ns"], v, nil)
 	return checkErr(resp, err)
 }
 
@@ -281,9 +255,8 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	v.Add("tenant", opts.NamespaceID)
 	v.Add("show", "all")
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["cs"], v.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	resp, err := http.DefaultClient.Do(req)
+
+	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, nil)
 	cfg := new(ConfigurationV3)
 	if c.APIVersion == "v3" {
 		err = decode(resp, err, cfg)
@@ -293,7 +266,7 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	}
 	// if config not found, nacos server return 200 and empty response
 	if err == io.EOF {
-		return nil, fmt.Errorf("404 Not Found %s %w", url, err)
+		return nil, fmt.Errorf("404 Not Found %w", err)
 	}
 	return cfg.Data, err
 }
@@ -333,8 +306,8 @@ func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*Configurat
 	v.Add("namespaceId", opts.NamespaceID)
 	v.Add("search", "accurate")
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["list_cs"], v.Encode())
-	resp, err := http.Get(url)
+
+	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, nil)
 	cfgList := new(ConfigurationListV3)
 	if c.APIVersion == "v3" {
 		err = decode(resp, err, cfgList)
@@ -406,12 +379,7 @@ func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
 	v.Add("config_tags", opts.Tags)
 	v.Add("configTags", opts.Tags)
 	v.Add("accessToken", token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["cs"], strings.NewReader(v.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["cs"], v, nil)
 	return checkErr(resp, err)
 }
 
@@ -489,12 +457,7 @@ func (c *Client) CreateRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["role"], strings.NewReader(v.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["role"], v, nil)
 	return checkErr(resp, err)
 }
 
@@ -545,12 +508,7 @@ func (c *Client) CreatePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["perm"], strings.NewReader(v.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["perm"], v, nil)
 	return checkErr(resp, err)
 }
 
