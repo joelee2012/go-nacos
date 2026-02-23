@@ -158,8 +158,8 @@ type Paginator[T any] interface {
 	IsEnd() bool
 }
 
-func listResource[L Paginator[T], T ListTypes](c *Client, endpoint string) (*List[T], error) {
-	token, err := c.GetToken(context.Background())
+func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, endpoint string) (*List[T], error) {
+	token, err := c.GetToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,11 @@ func listResource[L Paginator[T], T ListTypes](c *Client, endpoint string) (*Lis
 	for {
 		var lst L
 		url := fmt.Sprintf("%s%s?%s", c.URL, endpoint, v.Encode())
-		resp, err := http.Get(url)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err := decode(resp, err, &lst); err != nil {
 			return nil, err
 		}

@@ -55,9 +55,11 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/joelee2012/go-nacos/nacos.go (85.1%)</option>
+				<option value="file0">github.com/joelee2012/go-nacos/nacos.go (86.1%)</option>
 				
-				<option value="file1">github.com/joelee2012/go-nacos/type.go (83.3%)</option>
+				<option value="file1">github.com/joelee2012/go-nacos/respones.go (0.0%)</option>
+				
+				<option value="file2">github.com/joelee2012/go-nacos/type.go (66.7%)</option>
 				
 				</select>
 			</div>
@@ -98,6 +100,7 @@ limitations under the License.
 package nacos
 
 import (
+        "context"
         "encoding/json"
         "fmt"
         "io"
@@ -105,6 +108,7 @@ import (
         "net/http"
         "net/url"
         "strconv"
+        "strings"
         "time"
 )
 
@@ -124,7 +128,7 @@ type Token struct {
         ExpiredAt   int64
 }
 
-func (t *Token) Expired() bool <span class="cov4" title="4">{
+func (t *Token) Expired() bool <span class="cov6" title="19">{
         return time.Now().After(time.Unix(t.ExpiredAt, 0))
 }</span>
 
@@ -134,53 +138,109 @@ type State struct {
         FunctionMode   string `json:"function_mode"`
 }
 
-func NewClient(url, user, password string) *Client <span class="cov8" title="29">{
-        return &amp;Client{
-                URL:        url,
-                User:       user,
-                Password:   password,
-                APIVersion: "v1",
+var api = map[string]map[string]string{
+        "v1": {
+                "state":     "/v1/console/server/state",
+                "token":     "/v1/auth/login",
+                "list_ns":   "/v1/console/namespaces",
+                "ns":        "/v1/console/namespaces",
+                "cs":        "/v1/cs/configs",
+                "list_cs":   "/v1/cs/configs",
+                "user":      "/v1/auth/users",
+                "list_user": "/v1/auth/users",
+                "role":      "/v1/auth/roles",
+                "list_role": "/v1/auth/roles",
+                "perm":      "/v1/auth/permissions",
+                "list_perm": "/v1/auth/permissions",
+        },
+        "v3": {
+                "state":     "/v3/console/server/state",
+                "token":     "/v3/auth/user/login",
+                "list_ns":   "/v3/console/core/namespace/list",
+                "ns":        "/v3/console/core/namespace",
+                "cs":        "/v3/console/cs/config",
+                "list_cs":   "/v3/console/cs/config/list",
+                "list_user": "/v3/auth/user/list",
+                "user":      "/v3/auth/user",
+                "list_role": "/v3/auth/role/list",
+                "role":      "/v3/auth/role",
+                "perm":      "/v3/auth/permission",
+                "list_perm": "/v3/auth/permission/list",
+        },
+}
+
+func NewClient(url, user, password string) *Client <span class="cov7" title="29">{
+        client := &amp;Client{
+                URL:      url,
+                User:     user,
+                Password: password,
         }
+        client.DetectAPIVersion(context.Background())
+        return client
 }</span>
 
-func (c *Client) GetVersion() (string, error) <span class="cov1" title="1">{
+func (c *Client) DetectAPIVersion(ctx context.Context) <span class="cov7" title="29">{
+        for _, ver := range []string{"v3", "v1"} </span><span class="cov7" title="31">{
+                c.APIVersion = ver
+                v, err := c.GetVersion(ctx)
+                if err == nil &amp;&amp; v != "" </span><span class="cov7" title="27">{
+                        return
+                }</span>
+        }
+        <span class="cov2" title="2">c.APIVersion = "v1"</span>
+}
+
+func (c *Client) GetVersion(ctx context.Context) (string, error) <span class="cov7" title="33">{
         if c.State != nil </span><span class="cov0" title="0">{
                 return c.Version, nil
         }</span>
-        <span class="cov1" title="1">resp, err := http.Get(c.URL + "/v1/console/server/state")
-        err = decode(resp, err, &amp;c.State)
+        <span class="cov7" title="33">req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL+api[c.APIVersion]["state"], nil)
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
-        <span class="cov1" title="1">return c.Version, err</span>
+        <span class="cov7" title="33">resp, err := http.DefaultClient.Do(req)
+        err = decode(resp, err, &amp;c.State)
+        if err != nil </span><span class="cov3" title="4">{
+                return "", err
+        }</span>
+        <span class="cov7" title="29">return c.Version, err</span>
 }
 
-func (c *Client) GetToken() (string, error) <span class="cov8" title="30">{
-        if c.Token != nil &amp;&amp; !c.Token.Expired() </span><span class="cov4" title="4">{
+func (c *Client) GetToken(ctx context.Context) (string, error) <span class="cov8" title="45">{
+        if c.Token != nil &amp;&amp; !c.Token.Expired() </span><span class="cov6" title="19">{
                 return c.AccessToken, nil
         }</span>
-        <span class="cov8" title="26">v := url.Values{}
+        <span class="cov7" title="26">v := url.Values{}
         v.Add("username", c.User)
         v.Add("password", c.Password)
         now := time.Now().Unix()
-        resp, err := http.PostForm(c.URL+"/v1/auth/login", v)
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["token"], strings.NewReader(v.Encode()))
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov7" title="26">req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+        resp, err := http.DefaultClient.Do(req)
         err = decode(resp, err, &amp;c.Token)
         if err != nil </span><span class="cov1" title="1">{
                 return "", err
         }</span>
-        <span class="cov8" title="25">c.ExpiredAt = now + c.TokenTTL
+        <span class="cov7" title="25">c.ExpiredAt = now + c.TokenTTL
         return c.AccessToken, err</span>
 }
 
-func (c *Client) ListNamespace() (*NamespaceList, error) <span class="cov4" title="5">{
-        token, err := c.GetToken()
+func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) <span class="cov5" title="8">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov4" title="5">v := url.Values{}
+        <span class="cov5" title="8">v := url.Values{}
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/console/namespaces?%s", c.URL, v.Encode())
-        resp, err := http.Get(url)
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["list_ns"], v.Encode())
+        req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov5" title="8">resp, err := http.DefaultClient.Do(req)
         namespaces := new(NamespaceList)
         err = decode(resp, err, namespaces)
         return namespaces, err</span>
@@ -192,78 +252,94 @@ type CreateNsOpts struct {
         ID          string
 }
 
-func (c *Client) CreateNamespace(opts *CreateNsOpts) error <span class="cov2" title="2">{
-        token, err := c.GetToken()
+func (c *Client) CreateNamespace(ctx context.Context, opts *CreateNsOpts) error <span class="cov3" title="3">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov2" title="2">v := url.Values{}
+        <span class="cov3" title="3">v := url.Values{}
         v.Add("customNamespaceId", opts.ID)
         v.Add("namespaceName", opts.Name)
         v.Add("namespaceDesc", opts.Description)
         v.Add("accessToken", token)
-        resp, err := http.PostForm(c.URL+"/v1/console/namespaces", v)
-        return checkErr(resp, err)</span>
-}
-
-func (c *Client) DeleteNamespace(id string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["ns"], strings.NewReader(v.Encode()))
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov1" title="1">v := url.Values{}
+        <span class="cov3" title="3">req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+        resp, err := http.DefaultClient.Do(req)
+        return checkErr(resp, err)</span>
+}
+
+func (c *Client) DeleteNamespace(ctx context.Context, id string, force bool) error <span class="cov2" title="2">{
+        token, err := c.GetToken(ctx)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov2" title="2">if !force </span><span class="cov2" title="2">{
+                cfgs, err := c.ListConfigInNs(ctx, id, "")
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov2" title="2">if cfgs.TotalCount != 0 </span><span class="cov0" title="0">{
+                        return fmt.Errorf("configruation exists in namespace, must set force to delete")
+                }</span>
+        }
+        <span class="cov2" title="2">v := url.Values{}
         v.Add("namespaceId", id)
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/console/namespaces?%s", c.URL, v.Encode())
-        req, err := http.NewRequest(http.MethodDelete, url, nil)
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["ns"], v.Encode())
+        req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov1" title="1">resp, err := http.DefaultClient.Do(req)
+        <span class="cov2" title="2">resp, err := http.DefaultClient.Do(req)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) UpdateNamespace(opts *CreateNsOpts) error <span class="cov2" title="2">{
-        token, err := c.GetToken()
+func (c *Client) UpdateNamespace(ctx context.Context, opts *CreateNsOpts) error <span class="cov3" title="3">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov2" title="2">v := url.Values{}
+        <span class="cov3" title="3">v := url.Values{}
         v.Add("namespace", opts.ID)
+        v.Add("namespaceId", opts.ID)
         v.Add("namespaceShowName", opts.Name)
+        v.Add("namespaceName", opts.Name)
         v.Add("namespaceDesc", opts.Description)
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/console/namespaces?%s", c.URL, v.Encode())
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["ns"], v.Encode())
         req, err := http.NewRequest(http.MethodPut, url, nil)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov2" title="2">req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+        <span class="cov3" title="3">req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
         resp, err := http.DefaultClient.Do(req)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) CreateOrUpdateNamespace(opts *CreateNsOpts) error <span class="cov2" title="2">{
-        nsList, err := c.ListNamespace()
+func (c *Client) CreateOrUpdateNamespace(ctx context.Context, opts *CreateNsOpts) error <span class="cov2" title="2">{
+        nsList, err := c.ListNamespace(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
         <span class="cov2" title="2">for _, ns := range nsList.Items </span><span class="cov2" title="2">{
                 if ns.ID == opts.ID </span><span class="cov1" title="1">{
-                        return c.UpdateNamespace(opts)
+                        return c.UpdateNamespace(ctx, opts)
                 }</span>
         }
-        <span class="cov1" title="1">return c.CreateNamespace(opts)</span>
+        <span class="cov1" title="1">return c.CreateNamespace(ctx, opts)</span>
 }
 
-func (c *Client) GetNamespace(id string) (*Namespace, error) <span class="cov1" title="1">{
-        nsList, err := c.ListNamespace()
+func (c *Client) GetNamespace(ctx context.Context, id string) (*Namespace, error) <span class="cov2" title="2">{
+        nsList, err := c.ListNamespace(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">for _, ns := range nsList.Items </span><span class="cov1" title="1">{
-                if ns.ID == id </span><span class="cov1" title="1">{
+        <span class="cov2" title="2">for _, ns := range nsList.Items </span><span class="cov2" title="2">{
+                if ns.ID == id </span><span class="cov2" title="2">{
                         return ns, nil
                 }</span>
         }
@@ -276,27 +352,34 @@ type GetCfgOpts struct {
         NamespaceID string
 }
 
-func (c *Client) GetConfig(opts *GetCfgOpts) (*Configuration, error) <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) <span class="cov2" title="2">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">v := url.Values{}
+        <span class="cov2" title="2">v := url.Values{}
         v.Add("dataId", opts.DataID)
         v.Add("group", opts.Group)
+        v.Add("groupName", opts.Group)
         v.Add("namespaceId", opts.NamespaceID)
         v.Add("tenant", opts.NamespaceID)
         v.Add("show", "all")
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/cs/configs?%s", c.URL, v.Encode())
-        resp, err := http.Get(url)
-        config := new(Configuration)
-        err = decode(resp, err, config)
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["cs"], v.Encode())
+        req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+        resp, err := http.DefaultClient.Do(req)
+        cfg := new(ConfigurationV3)
+        if c.APIVersion == "v3" </span><span class="cov1" title="1">{
+                err = decode(resp, err, cfg)
+        }</span> else<span class="cov1" title="1"> {
+                cfg.Data = new(Configuration)
+                err = decode(resp, err, cfg.Data)
+        }</span>
         // if config not found, nacos server return 200 and empty response
-        if err == io.EOF </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if err == io.EOF </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("404 Not Found %s %w", url, err)
         }</span>
-        <span class="cov1" title="1">return config, err</span>
+        <span class="cov2" title="2">return cfg.Data, err</span>
 }
 
 type ListCfgOpts struct {
@@ -310,65 +393,72 @@ type ListCfgOpts struct {
         PageSize    int
 }
 
-func (c *Client) ListConfig(opts *ListCfgOpts) (*ConfigurationList, error) <span class="cov3" title="3">{
-        token, err := c.GetToken()
+func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*ConfigurationList, error) <span class="cov5" title="8">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov3" title="3">v := url.Values{}
+        <span class="cov5" title="8">v := url.Values{}
         v.Add("dataId", opts.DataID)
         v.Add("group", opts.Group)
+        v.Add("groupName", opts.Group)
         v.Add("appName", opts.Application)
         v.Add("config_tags", opts.Tags)
+        v.Add("configTags", opts.Tags)
         if opts.PageNumber == 0 </span><span class="cov0" title="0">{
                 opts.PageNumber = 1
         }</span>
-        <span class="cov3" title="3">if opts.PageSize == 0 </span><span class="cov0" title="0">{
+        <span class="cov5" title="8">if opts.PageSize == 0 </span><span class="cov0" title="0">{
                 opts.PageSize = 10
         }</span>
-        <span class="cov3" title="3">v.Add("pageNo", strconv.Itoa(opts.PageNumber))
+        <span class="cov5" title="8">v.Add("pageNo", strconv.Itoa(opts.PageNumber))
         v.Add("pageSize", strconv.Itoa(opts.PageSize))
         v.Add("tenant", opts.NamespaceID)
+        v.Add("namespaceId", opts.NamespaceID)
         v.Add("search", "accurate")
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/cs/configs?%s", c.URL, v.Encode())
-        configs := new(ConfigurationList)
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["list_cs"], v.Encode())
         resp, err := http.Get(url)
-        err = decode(resp, err, configs)
-        return configs, err</span>
+        cfgList := new(ConfigurationListV3)
+        if c.APIVersion == "v3" </span><span class="cov3" title="4">{
+                err = decode(resp, err, cfgList)
+        }</span> else<span class="cov3" title="4"> {
+                err = decode(resp, err, &amp;cfgList.Data)
+        }</span>
+        <span class="cov5" title="8">return &amp;cfgList.Data, err</span>
 }
 
-func (c *Client) ListConfigInNs(namespace, group string) (*ConfigurationList, error) <span class="cov2" title="2">{
+func (c *Client) ListConfigInNs(ctx context.Context, namespace, group string) (*ConfigurationList, error) <span class="cov4" title="6">{
         nsCs := new(ConfigurationList)
         listOpts := ListCfgOpts{PageNumber: 1, PageSize: 100, Group: group, NamespaceID: namespace}
-        for </span><span class="cov2" title="2">{
-                cs, err := c.ListConfig(&amp;listOpts)
+        for </span><span class="cov4" title="6">{
+                cs, err := c.ListConfig(ctx, &amp;listOpts)
                 if err != nil </span><span class="cov0" title="0">{
                         log.Fatal(err)
                 }</span>
-                <span class="cov2" title="2">nsCs.Items = append(nsCs.Items, cs.Items...)
-                if cs.PagesAvailable == 0 || cs.PagesAvailable == cs.PageNumber </span><span class="cov2" title="2">{
+                <span class="cov4" title="6">nsCs.Items = append(nsCs.Items, cs.Items...)
+                if cs.PagesAvailable == 0 || cs.PagesAvailable == cs.PageNumber </span><span class="cov4" title="6">{
                         break</span>
                 }
                 <span class="cov0" title="0">listOpts.PageNumber += 1</span>
         }
-        <span class="cov2" title="2">return nsCs, nil</span>
+        <span class="cov4" title="6">return nsCs, nil</span>
 }
 
-func (c *Client) ListAllConfig() (*ConfigurationList, error) <span class="cov1" title="1">{
+func (c *Client) ListAllConfig(ctx context.Context) (*ConfigurationList, error) <span class="cov2" title="2">{
         allCs := new(ConfigurationList)
-        nss, err := c.ListNamespace()
+        nss, err := c.ListNamespace(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">for _, ns := range nss.Items </span><span class="cov1" title="1">{
-                cs, err := c.ListConfigInNs(ns.ID, "")
+        <span class="cov2" title="2">for _, ns := range nss.Items </span><span class="cov2" title="2">{
+                cs, err := c.ListConfigInNs(ctx, ns.ID, "")
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
-                <span class="cov1" title="1">allCs.Items = append(allCs.Items, cs.Items...)</span>
+                <span class="cov2" title="2">allCs.Items = append(allCs.Items, cs.Items...)</span>
         }
-        <span class="cov1" title="1">return allCs, nil</span>
+        <span class="cov2" title="2">return allCs, nil</span>
 }
 
 type CreateCfgOpts struct {
@@ -382,14 +472,15 @@ type CreateCfgOpts struct {
         Type        string
 }
 
-func (c *Client) CreateConfig(opts *CreateCfgOpts) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
         <span class="cov1" title="1">v := url.Values{}
         v.Add("dataId", opts.DataID)
         v.Add("group", opts.Group)
+        v.Add("groupName", opts.Group)
         v.Add("content", opts.Content)
         v.Add("type", opts.Type)
         v.Add("tenant", opts.NamespaceID)
@@ -397,35 +488,38 @@ func (c *Client) CreateConfig(opts *CreateCfgOpts) error <span class="cov1" titl
         v.Add("appName", opts.Application)
         v.Add("desc", opts.Description)
         v.Add("config_tags", opts.Tags)
+        v.Add("configTags", opts.Tags)
         v.Add("accessToken", token)
-        resp, err := http.PostForm(c.URL+"/v1/cs/configs", v)
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["cs"], strings.NewReader(v.Encode()))
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov1" title="1">req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+        resp, err := http.DefaultClient.Do(req)
         return checkErr(resp, err)</span>
 }
 
 type DeleteCfgOpts = GetCfgOpts
 
-func (c *Client) DeleteConfig(opts *DeleteCfgOpts) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) DeleteConfig(ctx context.Context, opts *DeleteCfgOpts) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
         <span class="cov1" title="1">v := url.Values{}
         v.Add("dataId", opts.DataID)
         v.Add("group", opts.Group)
+        v.Add("groupName", opts.Group)
         v.Add("tenant", opts.NamespaceID)
+        v.Add("namespaceId", opts.NamespaceID)
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/cs/configs?%s", c.URL, v.Encode())
-        req, err := http.NewRequest(http.MethodDelete, url, nil)
-        if err != nil </span><span class="cov0" title="0">{
-                return err
-        }</span>
 
-        <span class="cov1" title="1">resp, err := http.DefaultClient.Do(req)
+        resp, err := c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["cs"], v, nil)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) CreateUser(name, password string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) CreateUser(ctx context.Context, name, password string) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -433,34 +527,31 @@ func (c *Client) CreateUser(name, password string) error <span class="cov1" titl
         v.Add("username", name)
         v.Add("password", password)
         v.Add("accessToken", token)
-        resp, err := http.PostForm(c.URL+"/v1/auth/users", v)
+        resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["user"], v, nil)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) DeleteUser(name string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) DeleteUser(ctx context.Context, name string) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
         <span class="cov1" title="1">v := url.Values{}
         v.Add("username", name)
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/auth/users?%s", c.URL, v.Encode())
-        req, err := http.NewRequest(http.MethodDelete, url, nil)
-        if err != nil </span><span class="cov0" title="0">{
-                return err
-        }</span>
-
-        <span class="cov1" title="1">resp, err := http.DefaultClient.Do(req)
+        resp, err := c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["user"], v, nil)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) ListUser() (*UserList, error) <span class="cov2" title="2">{
-        return listResource[User](c, "v1/auth/users")
-}</span>
+func (c *Client) ListUser(ctx context.Context) (*UserList, error) <span class="cov3" title="3">{
+        if c.APIVersion == "v1" </span><span class="cov1" title="1">{
+                return listResource[UserList](ctx, c, api[c.APIVersion]["list_user"])
+        }</span>
+        <span class="cov2" title="2">return listResource[UserListV3](ctx, c, api[c.APIVersion]["list_user"])</span>
+}
 
-func (c *Client) GetUser(name string) (*User, error) <span class="cov1" title="1">{
-        users, err := c.ListUser()
+func (c *Client) GetUser(ctx context.Context, name string) (*User, error) <span class="cov1" title="1">{
+        users, err := c.ListUser(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
@@ -473,8 +564,8 @@ func (c *Client) GetUser(name string) (*User, error) <span class="cov1" title="1
         <span class="cov0" title="0">return nil, fmt.Errorf("404 Not Found %s", name)</span>
 }
 
-func (c *Client) CreateRole(name, username string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) CreateRole(ctx context.Context, name, username string) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -482,12 +573,17 @@ func (c *Client) CreateRole(name, username string) error <span class="cov1" titl
         v.Add("username", username)
         v.Add("role", name)
         v.Add("accessToken", token)
-        resp, err := http.PostForm(c.URL+"/v1/auth/roles", v)
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["role"], strings.NewReader(v.Encode()))
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov1" title="1">req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+        resp, err := http.DefaultClient.Do(req)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) DeleteRole(name, username string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) DeleteRole(ctx context.Context, name, username string) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -495,8 +591,8 @@ func (c *Client) DeleteRole(name, username string) error <span class="cov1" titl
         v.Add("username", username)
         v.Add("role", name)
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/auth/roles?%s", c.URL, v.Encode())
-        req, err := http.NewRequest(http.MethodDelete, url, nil)
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["role"], v.Encode())
+        req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -504,12 +600,15 @@ func (c *Client) DeleteRole(name, username string) error <span class="cov1" titl
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) ListRole() (*RoleList, error) <span class="cov2" title="2">{
-        return listResource[Role](c, "v1/auth/roles")
-}</span>
+func (c *Client) ListRole(ctx context.Context) (*RoleList, error) <span class="cov3" title="3">{
+        if c.APIVersion == "v1" </span><span class="cov1" title="1">{
+                return listResource[RoleList](ctx, c, api[c.APIVersion]["list_role"])
+        }</span>
+        <span class="cov2" title="2">return listResource[RoleListV3](ctx, c, api[c.APIVersion]["list_role"])</span>
+}
 
-func (c *Client) GetRole(name, username string) (*Role, error) <span class="cov1" title="1">{
-        roles, err := c.ListRole()
+func (c *Client) GetRole(ctx context.Context, name, username string) (*Role, error) <span class="cov1" title="1">{
+        roles, err := c.ListRole(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
@@ -520,8 +619,8 @@ func (c *Client) GetRole(name, username string) (*Role, error) <span class="cov1
         <span class="cov0" title="0">return nil, fmt.Errorf("404 Not Found %s:%s", name, username)</span>
 }
 
-func (c *Client) CreatePermission(role, resource, permission string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) CreatePermission(ctx context.Context, role, resource, permission string) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -530,12 +629,17 @@ func (c *Client) CreatePermission(role, resource, permission string) error <span
         v.Add("resource", resource)
         v.Add("role", role)
         v.Add("accessToken", token)
-        resp, err := http.PostForm(c.URL+"/v1/auth/permissions", v)
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["perm"], strings.NewReader(v.Encode()))
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov1" title="1">req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+        resp, err := http.DefaultClient.Do(req)
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) DeletePermission(role, resource, permission string) error <span class="cov1" title="1">{
-        token, err := c.GetToken()
+func (c *Client) DeletePermission(ctx context.Context, role, resource, permission string) error <span class="cov1" title="1">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -544,8 +648,8 @@ func (c *Client) DeletePermission(role, resource, permission string) error <span
         v.Add("resource", resource)
         v.Add("role", role)
         v.Add("accessToken", token)
-        url := fmt.Sprintf("%s/v1/auth/permissions?%s", c.URL, v.Encode())
-        req, err := http.NewRequest(http.MethodDelete, url, nil)
+        url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["perm"], v.Encode())
+        req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
@@ -553,12 +657,15 @@ func (c *Client) DeletePermission(role, resource, permission string) error <span
         return checkErr(resp, err)</span>
 }
 
-func (c *Client) ListPermission() (*PermissionList, error) <span class="cov2" title="2">{
-        return listResource[Permission](c, "v1/auth/permissions")
-}</span>
+func (c *Client) ListPermission(ctx context.Context) (*PermissionList, error) <span class="cov3" title="3">{
+        if c.APIVersion == "v1" </span><span class="cov1" title="1">{
+                return listResource[PermissionList](ctx, c, api[c.APIVersion]["list_perm"])
+        }</span>
+        <span class="cov2" title="2">return listResource[PermissionListV3](ctx, c, api[c.APIVersion]["list_perm"])</span>
+}
 
-func (c *Client) GetPermission(role, resource, action string) (*Permission, error) <span class="cov1" title="1">{
-        perms, err := c.ListPermission()
+func (c *Client) GetPermission(ctx context.Context, role, resource, action string) (*Permission, error) <span class="cov1" title="1">{
+        perms, err := c.ListPermission(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
@@ -569,38 +676,58 @@ func (c *Client) GetPermission(role, resource, action string) (*Permission, erro
         <span class="cov0" title="0">return nil, fmt.Errorf("404 Not Found %s:%s:%s", role, resource, action)</span>
 }
 
-func checkStatus(resp *http.Response) error <span class="cov10" title="55">{
-        if resp.StatusCode != http.StatusOK </span><span class="cov1" title="1">{
+func checkStatus(resp *http.Response) error <span class="cov10" title="100">{
+        if resp.StatusCode != http.StatusOK </span><span class="cov3" title="3">{
                 data, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("%s %s %w", resp.Status, resp.Request.URL, err)
                 }</span>
                 // no data or html data
-                <span class="cov1" title="1">if len(data) == 0 || data[0] == '&lt;' </span><span class="cov1" title="1">{
+                <span class="cov3" title="3">if len(data) == 0 || data[0] == '&lt;' </span><span class="cov3" title="3">{
                         return fmt.Errorf("%s %s", resp.Status, resp.Request.URL)
                 }</span>
                 <span class="cov0" title="0">return fmt.Errorf("%s %s %s", resp.Status, resp.Request.URL, data)</span>
         }
-        <span class="cov9" title="54">return nil</span>
+        <span class="cov9" title="97">return nil</span>
 }
 
-func checkErr(resp *http.Response, httpErr error) error <span class="cov6" title="13">{
+func checkErr(resp *http.Response, httpErr error) error <span class="cov6" title="16">{
         if httpErr != nil </span><span class="cov0" title="0">{
                 return httpErr
         }</span>
-        <span class="cov6" title="13">defer resp.Body.Close()
+        <span class="cov6" title="16">defer resp.Body.Close()
         return checkStatus(resp)</span>
 }
 
-func decode(resp *http.Response, httpErr error, v any) error <span class="cov9" title="42">{
-        if httpErr != nil </span><span class="cov0" title="0">{
+func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, body io.Reader) (*http.Response, error) <span class="cov3" title="3">{
+        req, err := http.NewRequestWithContext(ctx, method, c.URL+path, body)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        
+        <span class="cov3" title="3">if values != nil </span><span class="cov3" title="3">{
+                if method == http.MethodGet || method == http.MethodDelete </span><span class="cov2" title="2">{
+                        req.URL.RawQuery = values.Encode()
+                }</span> else<span class="cov1" title="1"> {
+                        req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+                        if body == nil </span><span class="cov1" title="1">{
+                                req.Body = io.NopCloser(strings.NewReader(values.Encode()))
+                        }</span>
+                }
+        }
+        
+        <span class="cov3" title="3">return http.DefaultClient.Do(req)</span>
+}
+
+func decode(resp *http.Response, httpErr error, v any) error <span class="cov9" title="86">{
+        if httpErr != nil </span><span class="cov2" title="2">{
                 return httpErr
         }</span>
-        <span class="cov9" title="42">defer resp.Body.Close()
-        if err := checkStatus(resp); err != nil </span><span class="cov1" title="1">{
+        <span class="cov9" title="84">defer resp.Body.Close()
+        if err := checkStatus(resp); err != nil </span><span class="cov3" title="3">{
                 return err
         }</span>
-        <span class="cov9" title="41">return json.NewDecoder(resp.Body).Decode(v)</span>
+        <span class="cov9" title="81">return json.NewDecoder(resp.Body).Decode(v)</span>
 }
 
 // type NacosErr struct {
@@ -616,7 +743,55 @@ func decode(resp *http.Response, httpErr error, v any) error <span class="cov9" 
 // func (e *NacosErr) Unwrap() error { return e.Err }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">/*
+		<pre class="file" id="file1" style="display: none">package nacos
+
+import (
+        "encoding/json"
+        "fmt"
+        "io"
+        "net/http"
+)
+
+type Response struct {
+        *http.Response
+        httpErr error
+}
+
+func (r *Response) CheckStatus() error <span class="cov0" title="0">{
+        if r.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
+                data, err := io.ReadAll(io.LimitReader(r.Body, 1&lt;&lt;20))
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("%s: %s %w", r.Status, r.Request.URL, err)
+                }</span>
+                <span class="cov0" title="0">if data[0] == '&lt;' </span><span class="cov0" title="0">{
+                        return fmt.Errorf("%s: %s", r.Status, r.Request.URL)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("%s: %s %s", r.Status, r.Request.URL, data)</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+func (r *Response) CheckError() error <span class="cov0" title="0">{
+        if r.httpErr != nil </span><span class="cov0" title="0">{
+                return r.httpErr
+        }</span>
+        <span class="cov0" title="0">defer r.Body.Close()
+        return r.CheckStatus()</span>
+}
+
+func (r *Response) Decode(v any) error <span class="cov0" title="0">{
+        if r.httpErr != nil </span><span class="cov0" title="0">{
+                return r.httpErr
+        }</span>
+        <span class="cov0" title="0">defer r.Body.Close()
+        if err := r.CheckStatus(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">return json.NewDecoder(r.Body).Decode(v)</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">/*
 Copyright © 2025 Joe Lee &lt;lj_2005@163.com&gt;
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -634,6 +809,7 @@ limitations under the License.
 package nacos
 
 import (
+        "context"
         "fmt"
         "net/http"
         "net/url"
@@ -641,8 +817,8 @@ import (
 )
 
 type NamespaceList struct {
-        // Code    int          `json:"code,omitempty"`
-        // Message interface{}  `json:"message,omitempty"`
+        // Code    int         `json:"code,omitempty"`
+        // Message string      `json:"message,omitempty"`
         Items []*Namespace `json:"data"`
 }
 
@@ -659,8 +835,10 @@ type Configuration struct {
         ID               string `json:"id"`
         DataID           string `json:"dataId"`
         Group            string `json:"group"`
+        GroupName        string `json:"groupName"`
         Content          string `json:"content"`
-        NamespaceID      string `json:"tenant"`
+        Tenant           string `json:"tenant"`
+        NamespaceID      string `json:"namespaceId"`
         Type             string `json:"type"`
         Md5              string `json:"md5,omitempty"`
         EncryptedDataKey string `json:"encryptedDataKey,omitempty"`
@@ -669,6 +847,26 @@ type Configuration struct {
         ModifyTime       int64  `json:"modifyTime,omitempty"`
         Description      string `json:"desc,omitempty"`
         Tags             string `json:"configTags,omitempty"`
+}
+
+type ConfigurationV3 struct {
+        Code    int            `json:"code"`
+        Message string         `json:"message"`
+        Data    *Configuration `json:"data"`
+}
+
+func (c *Configuration) GetGroup() string <span class="cov0" title="0">{
+        if c.Group != "" </span><span class="cov0" title="0">{
+                return c.Group
+        }</span>
+        <span class="cov0" title="0">return c.GroupName</span>
+}
+
+func (c *Configuration) GetNamespace() string <span class="cov0" title="0">{
+        if c.Tenant != "" </span><span class="cov0" title="0">{
+                return c.Tenant
+        }</span>
+        <span class="cov0" title="0">return c.NamespaceID</span>
 }
 
 type User struct {
@@ -698,45 +896,90 @@ type List[T ListTypes] struct {
         Items          []*T `json:"pageItems"`
 }
 
-func (o *List[T]) Contains(other T) bool <span class="cov4" title="2">{
-        for _, it := range o.Items </span><span class="cov4" title="2">{
-                if *it == other </span><span class="cov4" title="2">{
+func (lst *List[T]) Contains(other T) bool <span class="cov3" title="2">{
+        for _, it := range lst.Items </span><span class="cov3" title="2">{
+                if *it == other </span><span class="cov3" title="2">{
                         return true
                 }</span>
         }
         <span class="cov0" title="0">return false</span>
 }
 
+func (lst List[T]) NextPageNumber() int <span class="cov0" title="0">{
+        return lst.PageNumber + 1
+}</span>
+
+func (lst List[T]) IsEnd() bool <span class="cov10" title="9">{
+        return lst.PagesAvailable == 0 || lst.PagesAvailable == lst.PageNumber
+}</span>
+
+func (lst List[T]) All() []*T <span class="cov10" title="9">{
+        return lst.Items
+}</span>
+
 type ConfigurationList = List[Configuration]
 type PermissionList = List[Permission]
 type RoleList = List[Role]
 type UserList = List[User]
 
-func listResource[T User | Role | Permission](c *Client, endpoint string) (*List[T], error) <span class="cov10" title="6">{
-        token, err := c.GetToken()
+type ListV3[T ListTypes] struct {
+        Code    int     `json:"code"`
+        Message string  `json:"message"`
+        Data    List[T] `json:"data"`
+}
+
+func (lst ListV3[T]) All() []*T <span class="cov8" title="6">{
+        return lst.Data.All()
+}</span>
+
+func (lst ListV3[T]) NextPageNumber() int <span class="cov0" title="0">{
+        return lst.Data.NextPageNumber()
+}</span>
+
+func (lst ListV3[T]) IsEnd() bool <span class="cov8" title="6">{
+        return lst.Data.IsEnd()
+}</span>
+
+type ConfigurationListV3 = ListV3[Configuration]
+type PermissionListV3 = ListV3[Permission]
+type RoleListV3 = ListV3[Role]
+type UserListV3 = ListV3[User]
+
+type Paginator[T any] interface {
+        All() []*T
+        NextPageNumber() int
+        IsEnd() bool
+}
+
+func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, endpoint string) (*List[T], error) <span class="cov10" title="9">{
+        token, err := c.GetToken(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov10" title="6">all := new(List[T])
+        <span class="cov10" title="9">all := new(List[T])
         v := url.Values{}
         v.Add("search", "accurate")
         v.Add("accessToken", token)
         v.Add("pageNo", "1")
         v.Add("pageSize", "100")
-        for </span><span class="cov10" title="6">{
-                l := new(List[T])
-                url := fmt.Sprintf("%s/%s?%s", c.URL, endpoint, v.Encode())
-                resp, err := http.Get(url)
-                if err := decode(resp, err, l); err != nil </span><span class="cov0" title="0">{
+        for </span><span class="cov10" title="9">{
+                var lst L
+                url := fmt.Sprintf("%s%s?%s", c.URL, endpoint, v.Encode())
+                req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+                if err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
-                <span class="cov10" title="6">all.Items = append(all.Items, l.Items...)
-                if l.PagesAvailable == 0 || l.PagesAvailable == l.PageNumber </span><span class="cov10" title="6">{
+                <span class="cov10" title="9">resp, err := http.DefaultClient.Do(req)
+                if err := decode(resp, err, &amp;lst); err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov10" title="9">all.Items = append(all.Items, lst.All()...)
+                if lst.IsEnd() </span><span class="cov10" title="9">{
                         break</span>
                 }
-                <span class="cov0" title="0">v.Set("pageNo", strconv.Itoa(l.PageNumber+1))</span>
+                <span class="cov0" title="0">v.Set("pageNo", strconv.Itoa(lst.NextPageNumber()))</span>
         }
-        <span class="cov10" title="6">return all, nil</span>
+        <span class="cov10" title="9">return all, nil</span>
 }
 </pre>
 		

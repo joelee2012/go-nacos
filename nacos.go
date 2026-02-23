@@ -461,9 +461,9 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 
 func (c *Client) ListUser(ctx context.Context) (*UserList, error) {
 	if c.APIVersion == "v1" {
-		return listResource[UserList](c, api[c.APIVersion]["list_user"])
+		return listResource[UserList](ctx, c, api[c.APIVersion]["list_user"])
 	}
-	return listResource[UserListV3](c, api[c.APIVersion]["list_user"])
+	return listResource[UserListV3](ctx, c, api[c.APIVersion]["list_user"])
 }
 
 func (c *Client) GetUser(ctx context.Context, name string) (*User, error) {
@@ -480,8 +480,8 @@ func (c *Client) GetUser(ctx context.Context, name string) (*User, error) {
 	return nil, fmt.Errorf("404 Not Found %s", name)
 }
 
-func (c *Client) CreateRole(name, username string) error {
-	token, err := c.GetToken()
+func (c *Client) CreateRole(ctx context.Context, name, username string) error {
+	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -489,12 +489,17 @@ func (c *Client) CreateRole(name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	resp, err := http.PostForm(c.URL+api[c.APIVersion]["role"], v)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["role"], strings.NewReader(v.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
 	return checkErr(resp, err)
 }
 
-func (c *Client) DeleteRole(name, username string) error {
-	token, err := c.GetToken()
+func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
+	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -503,7 +508,7 @@ func (c *Client) DeleteRole(name, username string) error {
 	v.Add("role", name)
 	v.Add("accessToken", token)
 	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["role"], v.Encode())
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}
@@ -511,15 +516,15 @@ func (c *Client) DeleteRole(name, username string) error {
 	return checkErr(resp, err)
 }
 
-func (c *Client) ListRole() (*RoleList, error) {
+func (c *Client) ListRole(ctx context.Context) (*RoleList, error) {
 	if c.APIVersion == "v1" {
-		return listResource[RoleList](c, api[c.APIVersion]["list_role"])
+		return listResource[RoleList](ctx, c, api[c.APIVersion]["list_role"])
 	}
-	return listResource[RoleListV3](c, api[c.APIVersion]["list_role"])
+	return listResource[RoleListV3](ctx, c, api[c.APIVersion]["list_role"])
 }
 
-func (c *Client) GetRole(name, username string) (*Role, error) {
-	roles, err := c.ListRole()
+func (c *Client) GetRole(ctx context.Context, name, username string) (*Role, error) {
+	roles, err := c.ListRole(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -530,8 +535,8 @@ func (c *Client) GetRole(name, username string) (*Role, error) {
 	return nil, fmt.Errorf("404 Not Found %s:%s", name, username)
 }
 
-func (c *Client) CreatePermission(role, resource, permission string) error {
-	token, err := c.GetToken()
+func (c *Client) CreatePermission(ctx context.Context, role, resource, permission string) error {
+	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -540,12 +545,17 @@ func (c *Client) CreatePermission(role, resource, permission string) error {
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	resp, err := http.PostForm(c.URL+api[c.APIVersion]["perm"], v)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL+api[c.APIVersion]["perm"], strings.NewReader(v.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
 	return checkErr(resp, err)
 }
 
-func (c *Client) DeletePermission(role, resource, permission string) error {
-	token, err := c.GetToken()
+func (c *Client) DeletePermission(ctx context.Context, role, resource, permission string) error {
+	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -555,7 +565,7 @@ func (c *Client) DeletePermission(role, resource, permission string) error {
 	v.Add("role", role)
 	v.Add("accessToken", token)
 	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["perm"], v.Encode())
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}
@@ -563,15 +573,15 @@ func (c *Client) DeletePermission(role, resource, permission string) error {
 	return checkErr(resp, err)
 }
 
-func (c *Client) ListPermission() (*PermissionList, error) {
+func (c *Client) ListPermission(ctx context.Context) (*PermissionList, error) {
 	if c.APIVersion == "v1" {
-		return listResource[PermissionList](c, api[c.APIVersion]["list_perm"])
+		return listResource[PermissionList](ctx, c, api[c.APIVersion]["list_perm"])
 	}
-	return listResource[PermissionListV3](c, api[c.APIVersion]["list_perm"])
+	return listResource[PermissionListV3](ctx, c, api[c.APIVersion]["list_perm"])
 }
 
-func (c *Client) GetPermission(role, resource, action string) (*Permission, error) {
-	perms, err := c.ListPermission()
+func (c *Client) GetPermission(ctx context.Context, role, resource, action string) (*Permission, error) {
+	perms, err := c.ListPermission(ctx)
 	if err != nil {
 		return nil, err
 	}

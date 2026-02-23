@@ -1,6 +1,7 @@
 package nacos
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -167,7 +168,7 @@ func TestAccDetectAPIVersion(t *testing.T) {
 		t.Skip("skip as ACC != true ")
 	}
 	ts := startAccClient()
-	ts.DetectAPIVersion()
+	ts.DetectAPIVersion(context.Background())
 	assert.Equal(t, "v1", ts.APIVersion)
 }
 
@@ -191,7 +192,7 @@ func TestGetToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := NewClient(tt.server.URL, "user", "password")
-			token, err := c.GetToken()
+			token, err := c.GetToken(context.Background())
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Equal(t, "", token)
@@ -212,7 +213,7 @@ func TestListNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			ns, err := c.ListNamespace()
+			ns, err := c.ListNamespace(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, 1, len(ns.Items))
 				assert.Equal(t, "test", ns.Items[0].ID)
@@ -228,7 +229,7 @@ func TestCreateNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			err := c.CreateNamespace(&CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
+			err := c.CreateNamespace(context.Background(), &CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
 			assert.NoError(t, err)
 		})
 	}
@@ -240,7 +241,7 @@ func TestGetNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			n, err := c.GetNamespace("test")
+			n, err := c.GetNamespace(context.Background(), "test")
 			if assert.NoError(t, err) {
 				assert.Equal(t, "test", n.ID)
 			}
@@ -254,7 +255,7 @@ func TestDeleteNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			err := c.DeleteNamespace("test-id", false)
+			err := c.DeleteNamespace(context.Background(), "test-id", false)
 			assert.NoError(t, err)
 		})
 	}
@@ -266,7 +267,7 @@ func TestUpdateNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			err := c.UpdateNamespace(&CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
+			err := c.UpdateNamespace(context.Background(), &CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
 			assert.NoError(t, err)
 		})
 	}
@@ -284,7 +285,7 @@ func TestCreateOrUpdateNamespace(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := c.CreateOrUpdateNamespace(&tt.data)
+			err := c.CreateOrUpdateNamespace(context.Background(), &tt.data)
 			assert.NoError(t, err)
 		})
 	}
@@ -296,7 +297,7 @@ func TestGetConfig(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			cfg, err := c.GetConfig(&GetCfgOpts{DataID: "test", Group: "DEFAULT_GROUP"})
+			cfg, err := c.GetConfig(context.Background(), &GetCfgOpts{DataID: "test", Group: "DEFAULT_GROUP"})
 			if assert.NoError(t, err) {
 				assert.Equal(t, "test", cfg.DataID)
 			}
@@ -310,7 +311,7 @@ func TestListConfig(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			cfgs, err := c.ListConfig(&ListCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", PageNumber: 1, PageSize: 10})
+			cfgs, err := c.ListConfig(context.Background(), &ListCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", PageNumber: 1, PageSize: 10})
 			if assert.NoError(t, err) {
 				assert.Equal(t, 1, len(cfgs.Items))
 				assert.Equal(t, "test", cfgs.Items[0].DataID)
@@ -326,7 +327,7 @@ func TestListConfigInNs(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			cfgs, err := c.ListConfigInNs("test", "DEFAULT_GROUP")
+			cfgs, err := c.ListConfigInNs(context.Background(), "test", "DEFAULT_GROUP")
 			if assert.NoError(t, err) {
 				assert.Equal(t, 1, len(cfgs.Items))
 				assert.Equal(t, "test", cfgs.Items[0].DataID)
@@ -341,7 +342,7 @@ func TestListAllConfig(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			cfgs, err := c.ListAllConfig()
+			cfgs, err := c.ListAllConfig(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, 1, len(cfgs.Items))
 				assert.Equal(t, "test", cfgs.Items[0].DataID)
@@ -354,7 +355,7 @@ func TestCreateConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.CreateConfig(&CreateCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
+	err := c.CreateConfig(context.Background(), &CreateCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
 	assert.NoError(t, err)
 }
 
@@ -362,7 +363,7 @@ func TestDeleteConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.DeleteConfig(&DeleteCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", NamespaceID: "test-tenant"})
+	err := c.DeleteConfig(context.Background(), &DeleteCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", NamespaceID: "test-tenant"})
 	assert.NoError(t, err)
 }
 
@@ -372,7 +373,7 @@ func TestListUser(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			users, err := c.ListUser()
+			users, err := c.ListUser(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, "user1", users.Items[0].Name)
 				// assert.Equal(t, "user2", users.Items[1].Name)
@@ -385,7 +386,7 @@ func TestCreateUser(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.CreateUser("user3", "password")
+	err := c.CreateUser(context.Background(), "user3", "password")
 	assert.NoError(t, err)
 }
 
@@ -393,7 +394,7 @@ func TestDeleteUser(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.DeleteUser("user3")
+	err := c.DeleteUser(context.Background(), "user3")
 	assert.NoError(t, err)
 }
 
@@ -401,7 +402,7 @@ func TestGetUser(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	user, err := c.GetUser("user1")
+	user, err := c.GetUser(context.Background(), "user1")
 	if assert.NoError(t, err) {
 		assert.Equal(t, "user1", user.Name)
 	}
@@ -413,7 +414,7 @@ func TestListRole(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			roles, err := c.ListRole()
+			roles, err := c.ListRole(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, "ROLE_ADMIN", roles.Items[0].Name)
 				assert.Equal(t, "nacos", roles.Items[0].Username)
@@ -426,7 +427,7 @@ func TestCreateRole(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.CreateRole("role1", "user1")
+	err := c.CreateRole(context.Background(), "role1", "user1")
 	assert.NoError(t, err)
 }
 
@@ -434,7 +435,7 @@ func TestDeleteRole(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.DeleteRole("role1", "user1")
+	err := c.DeleteRole(context.Background(), "role1", "user1")
 	assert.NoError(t, err)
 }
 
@@ -442,7 +443,7 @@ func TestGetRole(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	role, err := c.GetRole("ROLE_ADMIN", "nacos")
+	role, err := c.GetRole(context.Background(), "ROLE_ADMIN", "nacos")
 	if assert.NoError(t, err) {
 		assert.Equal(t, "ROLE_ADMIN", role.Name)
 	}
@@ -454,7 +455,7 @@ func TestListPermission(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			perms, err := c.ListPermission()
+			perms, err := c.ListPermission(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, "ROLE_ADMIN", perms.Items[0].Role)
 				assert.Equal(t, "backend:*:*", perms.Items[0].Resource)
@@ -468,7 +469,7 @@ func TestCreatePermission(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.CreatePermission("ROLE_ADMIN", "backend:*:*", "rw")
+	err := c.CreatePermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
 	assert.NoError(t, err)
 }
 
@@ -476,7 +477,7 @@ func TestDeletePermission(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.DeletePermission("ROLE_ADMIN", "backend:*:*", "rw")
+	err := c.DeletePermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
 	assert.NoError(t, err)
 }
 
@@ -484,7 +485,7 @@ func TestGetPermission(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	perm, err := c.GetPermission("ROLE_ADMIN", "backend:*:*", "rw")
+	perm, err := c.GetPermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
 	if assert.NoError(t, err) {
 		assert.Equal(t, "ROLE_ADMIN", perm.Role)
 		assert.Equal(t, "backend:*:*", perm.Resource)
