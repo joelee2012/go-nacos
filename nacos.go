@@ -185,12 +185,7 @@ func (c *Client) DeleteNamespace(ctx context.Context, id string, force bool) err
 	v := url.Values{}
 	v.Add("namespaceId", id)
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["ns"], v.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["ns"], v, nil)
 	return checkErr(resp, err)
 }
 
@@ -470,12 +465,7 @@ func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["role"], v.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["role"], v, nil)
 	return checkErr(resp, err)
 }
 
@@ -522,12 +512,7 @@ func (c *Client) DeletePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	url := fmt.Sprintf("%s%s?%s", c.URL, api[c.APIVersion]["perm"], v.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["perm"], v, nil)
 	return checkErr(resp, err)
 }
 

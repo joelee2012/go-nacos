@@ -17,7 +17,6 @@ package nacos
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -171,12 +170,7 @@ func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, e
 	v.Add("pageSize", "100")
 	for {
 		var lst L
-		url := fmt.Sprintf("%s%s?%s", c.URL, endpoint, v.Encode())
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := c.doRequest(ctx, http.MethodGet, endpoint, v, nil)
 		if err := decode(resp, err, &lst); err != nil {
 			return nil, err
 		}
