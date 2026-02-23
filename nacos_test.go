@@ -149,7 +149,7 @@ func TestGetVersion(t *testing.T) {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
 			c.State = nil
-			version, err := c.GetVersion()
+			version, err := c.GetVersion(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, tt.expectValue, version)
 			}

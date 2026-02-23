@@ -16,6 +16,7 @@ limitations under the License.
 package nacos
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -158,7 +159,7 @@ type Paginator[T any] interface {
 }
 
 func listResource[L Paginator[T], T ListTypes](c *Client, endpoint string) (*List[T], error) {
-	token, err := c.GetToken()
+	token, err := c.GetToken(context.Background())
 	if err != nil {
 		return nil, err
 	}
