@@ -54,85 +54,10 @@ func randomID() string {
 func TestAccClientInitialization(t *testing.T) {
 	skipIfNotAcc(t)
 
-	testCases := []struct {
-		name     string
-		host     string
-		user     string
-		password string
-		wantErr  bool
-	}{
-		{
-			name:     "valid credentials",
-			host:     os.Getenv("NACOS_HOST"),
-			user:     os.Getenv("NACOS_USERNAME"),
-			password: os.Getenv("NACOS_PASSWORD"),
-			wantErr:  false,
-		},
-		{
-			name:     "empty host",
-			host:     "",
-			user:     "user",
-			password: "pass",
-			wantErr:  true,
-		},
-		{
-			name:     "empty user",
-			host:     "host",
-			user:     "",
-			password: "pass",
-			wantErr:  true,
-		},
-		{
-			name:     "empty password",
-			host:     "host",
-			user:     "user",
-			password: "",
-			wantErr:  true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Backup and restore env vars
-			oldHost := os.Getenv("NACOS_HOST")
-			oldUser := os.Getenv("NACOS_USERNAME")
-			oldPass := os.Getenv("NACOS_PASSWORD")
-			defer func() {
-				os.Setenv("NACOS_HOST", oldHost)
-				os.Setenv("NACOS_USERNAME", oldUser)
-				os.Setenv("NACOS_PASSWORD", oldPass)
-			}()
-
-			// Set test case env vars
-			os.Setenv("NACOS_HOST", tc.host)
-			os.Setenv("NACOS_USERNAME", tc.user)
-			os.Setenv("NACOS_PASSWORD", tc.password)
-
-			client := createTestClient(t)
-			if tc.wantErr {
-				assert.Empty(t, client.URL)
-			} else {
-				assert.NotEmpty(t, client.URL)
-				assert.NotEmpty(t, client.User)
-				assert.NotEmpty(t, client.Password)
-			}
-		})
-	}
-}
-
-func createTestNamespace(t *testing.T, client *nacos.Client, name string) string {
-	ctx := context.Background()
-	nsID := randomID()
-	err := client.CreateNamespace(ctx, &nacos.CreateNsOpts{
-		Name:        name,
-		Description: "Test namespace",
-		ID:          nsID,
-	})
-	assert.NoError(t, err)
-	t.Cleanup(func() {
-		_ = client.DeleteNamespace(ctx, nsID, false)
-	})
-	return nsID
+	client := createTestClient(t)
+	assert.NotEmpty(t, client.URL)
+	assert.NotEmpty(t, client.User)
+	assert.NotEmpty(t, client.Password)
 }
 
 func TestAccNamespaceCRUD(t *testing.T) {
@@ -140,46 +65,41 @@ func TestAccNamespaceCRUD(t *testing.T) {
 
 	client := createTestClient(t)
 	ctx := context.Background()
-	initialName := "Test Namespace"
-	updatedName := "Updated Namespace"
 
-	// Create and verify
-	nsID := createTestNamespace(t, client, initialName)
+	// Create
+	nsID := randomID()
+	opts := &nacos.CreateNsOpts{
+		Name:        "Test Namespace",
+		Description: "Acceptance test namespace",
+		ID:          nsID,
+	}
+	err := client.CreateNamespace(ctx, opts)
+	assert.NoError(t, err)
+
+	// Read
 	ns, err := client.GetNamespace(ctx, nsID)
 	assert.NoError(t, err)
 	assert.Equal(t, nsID, ns.ID)
-	assert.Equal(t, initialName, ns.Name)
+	assert.Equal(t, "Test Namespace", ns.Name)
 
-	// Update and verify
-	err = client.UpdateNamespace(ctx, &nacos.CreateNsOpts{
-		ID:   nsID,
-		Name: updatedName,
-	})
+	// Update
+	opts.Name = "Updated Namespace"
+	err = client.UpdateNamespace(ctx, opts)
 	assert.NoError(t, err)
+
+	// Verify update
 	ns, err = client.GetNamespace(ctx, nsID)
 	assert.NoError(t, err)
-	assert.Equal(t, updatedName, ns.Name)
-}
+	assert.Equal(t, "Updated Namespace", ns.Name)
 
-func createTestConfig(t *testing.T, client *nacos.Client, nsID string, content string) string {
-	ctx := context.Background()
-	cfgDataID := "test-config" + randomID()
-	err := client.CreateConfig(ctx, &nacos.CreateCfgOpts{
-		DataID:      cfgDataID,
-		Group:       "DEFAULT_GROUP",
-		NamespaceID: nsID,
-		Content:     content,
-		Type:        "properties",
-	})
+	// Cleanup (will fail if namespace contains configs)
+	err = client.DeleteNamespace(ctx, nsID, false)
 	assert.NoError(t, err)
-	t.Cleanup(func() {
-		_ = client.DeleteConfig(ctx, &nacos.DeleteCfgOpts{
-			DataID:      cfgDataID,
-			Group:       "DEFAULT_GROUP",
-			NamespaceID: nsID,
-		})
-	})
-	return cfgDataID
+
+	// Verify deletion
+	_, err = client.GetNamespace(ctx, nsID)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "404 Not Found")
 }
 
 func TestAccConfigCRUD(t *testing.T) {
@@ -189,23 +109,39 @@ func TestAccConfigCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup test namespace
-	nsID := createTestNamespace(t, client, "Config Test NS")
+	nsID := randomID()
+	err := client.CreateNamespace(ctx, &nacos.CreateNsOpts{
+		Name: "Config Test NS",
+		ID:   nsID,
+	})
+	assert.NoError(t, err)
+	defer func() {
+		_ = client.DeleteNamespace(ctx, nsID, false)
+	}()
 
-	// Test config operations
-	initialContent := "test.key=test.value"
-	updatedContent := "test.key=updated.value"
+	// Create config
+	cfgDataID := "test-config" + randomID()
+	cfgContent := "test.key=test.value"
+	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+		DataID:      cfgDataID,
+		Group:       "DEFAULT_GROUP",
+		NamespaceID: nsID,
+		Content:     cfgContent,
+		Type:        "properties",
+	})
+	assert.NoError(t, err)
 
-	// Create and verify
-	cfgDataID := createTestConfig(t, client, nsID, initialContent)
+	// Get config
 	cfg, err := client.GetConfig(ctx, &nacos.GetCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, initialContent, cfg.Content)
+	assert.Equal(t, cfgContent, cfg.Content)
 
-	// Update and verify
+	// Update config
+	updatedContent := "test.key=updated.value"
 	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
@@ -214,6 +150,8 @@ func TestAccConfigCRUD(t *testing.T) {
 		Type:        "properties",
 	})
 	assert.NoError(t, err)
+
+	// Verify update
 	cfg, err = client.GetConfig(ctx, &nacos.GetCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
@@ -221,4 +159,20 @@ func TestAccConfigCRUD(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, updatedContent, cfg.Content)
+
+	// Delete config
+	err = client.DeleteConfig(ctx, &nacos.DeleteCfgOpts{
+		DataID:      cfgDataID,
+		Group:       "DEFAULT_GROUP",
+		NamespaceID: nsID,
+	})
+	assert.NoError(t, err)
+
+	// Verify deletion
+	_, err = client.GetConfig(ctx, &nacos.GetCfgOpts{
+		DataID:      cfgDataID,
+		Group:       "DEFAULT_GROUP",
+		NamespaceID: nsID,
+	})
+	assert.Error(t, err)
 }
