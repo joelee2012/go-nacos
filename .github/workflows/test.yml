@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    runs-on: 'ubuntu-latest'
+    runs-on: "ubuntu-latest"
     strategy:
       fail-fast: false
       matrix:
@@ -71,13 +71,12 @@ jobs:
 
       - run: go mod download
       - env:
-          TF_ACC: "true"
+          ACC: "true"
         run: make test
         timeout-minutes: 10
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
-        if: matrix.os == 'ubuntu-latest'
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # required
           verbose: true # optional (default = false)
