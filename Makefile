@@ -15,6 +15,9 @@ testshort: ## run test and generate short report
 	go test -timeout 30s -count=1 ./... -test.short
 .PHONY: testshort
 
+testacc:
+	ACC=true go test -coverprofile=coverage.txt -covermode=atomic -v ./... && \
+	go tool cover -html=coverage.txt -o cover.html
 fmt: ## format code
 	go fmt ./...
 .PHONY: fmt

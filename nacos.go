@@ -44,6 +44,8 @@ type Token struct {
 	ExpiredAt   int64
 }
 
+
+
 func (t *Token) Expired() bool {
 	return time.Now().After(time.Unix(t.ExpiredAt, 0))
 }
@@ -68,6 +70,8 @@ var api = map[string]map[string]string{
 		"list_role": "/v1/auth/roles",
 		"perm":      "/v1/auth/permissions",
 		"list_perm": "/v1/auth/permissions",
+		"service":   "/v1/ns/service",
+		"list_service": "/v1/ns/service/list",
 	},
 	"v3": {
 		"state":     "/v3/console/server/state",
@@ -82,6 +86,8 @@ var api = map[string]map[string]string{
 		"role":      "/v3/auth/role",
 		"perm":      "/v3/auth/permission",
 		"list_perm": "/v3/auth/permission/list",
+		"service":   "/v3/ns/service",
+		"list_service": "/v3/ns/service/list",
 	},
 }
 
@@ -534,6 +540,16 @@ func (c *Client) GetPermission(ctx context.Context, role, resource, action strin
 	}
 	return nil, fmt.Errorf("404 Not Found %s:%s:%s", role, resource, action)
 }
+
+// Service operations
+
+
+
+
+
+
+
+
 
 func checkStatus(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {

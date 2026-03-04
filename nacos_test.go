@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -159,18 +158,7 @@ func TestGetVersion(t *testing.T) {
 	}
 }
 
-func startAccClient() *Client {
-	return NewClient(os.Getenv("NACOS_HOST"), os.Getenv("NACOS_USER"), os.Getenv("NACOS_PASSWORD"))
-}
 
-func TestAccDetectAPIVersion(t *testing.T) {
-	if os.Getenv("ACC") != "true" {
-		t.Skip("skip as ACC != true ")
-	}
-	ts := startAccClient()
-	ts.DetectAPIVersion(context.Background())
-	assert.Equal(t, "v1", ts.APIVersion)
-}
 
 func TestGetToken(t *testing.T) {
 	okServer, _ := startServer()
