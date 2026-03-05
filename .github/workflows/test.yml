@@ -63,6 +63,10 @@ jobs:
             retries=$((retries-1))
             sleep 1
           done
+          if [ $retries -eq 0 ]; then
+            echo "nacos start failed"
+            exit 1
+          fi
           if [[ ! "${NACOS_VERSION}" =~ ^v2\.[123]\.* ]]; then
             curl -sf -XPOST "${NACOS_AUTH_URL}" -d "password=$NACOS_PASSWORD"
           fi
