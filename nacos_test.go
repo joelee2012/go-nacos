@@ -158,8 +158,6 @@ func TestGetVersion(t *testing.T) {
 	}
 }
 
-
-
 func TestGetToken(t *testing.T) {
 	okServer, _ := startServer()
 	defer okServer.Close()

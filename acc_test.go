@@ -13,7 +13,6 @@ import (
 )
 
 func skipIfNotAcc(t *testing.T) {
-	fmt.Printf("Debug - ACC env: '%s'\n", os.Getenv("ACC"))
 	if os.Getenv("ACC") != "true" {
 		t.Skip("Skipping acceptance test (ACC=true required)")
 	}
@@ -174,5 +173,6 @@ func TestAccConfigCRUD(t *testing.T) {
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
 	})
+
 	assert.Error(t, err)
 }

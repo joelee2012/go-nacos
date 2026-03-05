@@ -57,16 +57,16 @@ jobs:
         run: |
           docker compose up -d
           retries=100
-          while [ $retries -gt 0 ]; do
+          while :; do
+            if [ $retries -eq 0 ]; then
+              echo "nacos start failed"
+              exit 1
+            fi
             curl -sf "${NACOS_STATE}" && break
-            echo "Waiting for Nacos to be ready..."
+            echo "Waiting nacos ready ..."
             retries=$((retries-1))
             sleep 1
           done
-          if [ $retries -eq 0 ]; then
-            echo "nacos start failed"
-            exit 1
-          fi
           if [[ ! "${NACOS_VERSION}" =~ ^v2\.[123]\.* ]]; then
             curl -sf -XPOST "${NACOS_AUTH_URL}" -d "password=$NACOS_PASSWORD"
           fi
