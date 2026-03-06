@@ -176,3 +176,106 @@ func TestAccConfigCRUD(t *testing.T) {
 
 	assert.Error(t, err)
 }
+
+func TestAccUserCRUD(t *testing.T) {
+	skipIfNotAcc(t)
+
+	client := createTestClient(t)
+	ctx := context.Background()
+
+	// Create user
+	username := "test-user-" + randomID()
+	err := client.CreateUser(ctx, username, "test-password")
+	assert.NoError(t, err)
+
+	// Get user
+	user, err := client.GetUser(ctx, username)
+	assert.NoError(t, err)
+	assert.Equal(t, username, user.Name)
+
+	// Delete user
+	err = client.DeleteUser(ctx, username)
+	assert.NoError(t, err)
+
+	// Verify deletion
+	_, err = client.GetUser(ctx, username)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "404 Not Found")
+}
+
+func TestAccRoleCRUD(t *testing.T) {
+	skipIfNotAcc(t)
+
+	client := createTestClient(t)
+	ctx := context.Background()
+
+	// Create test user
+	username := "test-user-" + randomID()
+	err := client.CreateUser(ctx, username, "test-password")
+	assert.NoError(t, err)
+	defer func() {
+		_ = client.DeleteUser(ctx, username)
+	}()
+
+	// Create role
+	roleName := "TEST_ROLE"
+	err = client.CreateRole(ctx, roleName, username)
+	assert.NoError(t, err)
+
+	// Get role
+	role, err := client.GetRole(ctx, roleName, username)
+	assert.NoError(t, err)
+	assert.Equal(t, roleName, role.Name)
+	assert.Equal(t, username, role.Username)
+
+	// Delete role
+	err = client.DeleteRole(ctx, roleName, username)
+	assert.NoError(t, err)
+
+	// Verify deletion
+	_, err = client.GetRole(ctx, roleName, username)
+	assert.Error(t, err)
+}
+
+func TestAccPermissionCRUD(t *testing.T) {
+	skipIfNotAcc(t)
+
+	client := createTestClient(t)
+	ctx := context.Background()
+
+	// Create test user and role
+	username := "test-user-" + randomID()
+	err := client.CreateUser(ctx, username, "test-password")
+	assert.NoError(t, err)
+	defer func() {
+		_ = client.DeleteUser(ctx, username)
+	}()
+
+	roleName := "TEST_ROLE"
+	err = client.CreateRole(ctx, roleName, username)
+	assert.NoError(t, err)
+	defer func() {
+		_ = client.DeleteRole(ctx, roleName, username)
+	}()
+
+	// Create permission
+	resource := "test:resource:*"
+	action := "rw"
+	err = client.CreatePermission(ctx, roleName, resource, action)
+	assert.NoError(t, err)
+
+	// Get permission
+	perm, err := client.GetPermission(ctx, roleName, resource, action)
+	assert.NoError(t, err)
+	assert.Equal(t, roleName, perm.Role)
+	assert.Equal(t, resource, perm.Resource)
+	assert.Equal(t, action, perm.Action)
+
+	// Delete permission
+	err = client.DeletePermission(ctx, roleName, resource, action)
+	assert.NoError(t, err)
+
+	// Verify deletion
+	_, err = client.GetPermission(ctx, roleName, resource, action)
+	assert.Error(t, err)
+}
