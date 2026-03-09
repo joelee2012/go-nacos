@@ -60,6 +60,7 @@ jobs:
           while :; do
             if [ $retries -eq 0 ]; then
               echo "nacos start failed"
+              docker compose logs
               exit 1
             fi
             curl -sf "${NACOS_STATE}" && break
