@@ -16,7 +16,7 @@ limitations under the License.
 package nacos
 
 import (
-	"fmt"
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -157,8 +157,8 @@ type Paginator[T any] interface {
 	IsEnd() bool
 }
 
-func listResource[L Paginator[T], T ListTypes](c *Client, endpoint string) (*List[T], error) {
-	token, err := c.GetToken()
+func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, endpoint string) (*List[T], error) {
+	token, err := c.GetToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -170,8 +170,7 @@ func listResource[L Paginator[T], T ListTypes](c *Client, endpoint string) (*Lis
 	v.Add("pageSize", "100")
 	for {
 		var lst L
-		url := fmt.Sprintf("%s%s?%s", c.URL, endpoint, v.Encode())
-		resp, err := http.Get(url)
+		resp, err := c.doRequest(ctx, http.MethodGet, endpoint, v, nil)
 		if err := decode(resp, err, &lst); err != nil {
 			return nil, err
 		}
