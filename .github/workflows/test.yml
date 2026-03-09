@@ -30,7 +30,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Set up Docker Compose
-        uses: docker/setup-compose-action@v1
+        uses: docker/setup-compose-action@v2
       - name: Set up nacos info
         run: |
           if [[ "${NACOS_VERSION}" =~ ^v3 ]]; then
