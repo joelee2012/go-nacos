@@ -168,13 +168,14 @@ func TestAccConfigCRUD(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify deletion
-	_, err = client.GetConfig(ctx, &nacos.GetCfgOpts{
+	cfg, err = client.GetConfig(ctx, &nacos.GetCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
 	})
 
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.Nil(t, cfg)
 }
 
 func TestAccUserCRUD(t *testing.T) {
