@@ -10,7 +10,7 @@ A Go client library for interacting with Nacos (Dynamic Naming and Configuration
 
 - `make test`: Run tests with coverage report
 - `make testshort`: Run tests with short timeout (30s)
-- `make testacc`: Run tests with ACC=true
+- `source .env && make testacc`: Run tests with ACC=true
 - `make fmt`: Format code
 - `make lint`: Lint code using staticcheck
 - `make release`: Create a release snapshot using goreleaser
@@ -18,7 +18,8 @@ A Go client library for interacting with Nacos (Dynamic Naming and Configuration
 ## Code Structure
 
 - `nacos.go`: Main implementation file with Client struct and core API methods
-- `nacos_test.go`: Comprehensive test suite
+- `nacos_test.go`: unit test suite
+- `acc_test.go`: acceptance test suite
 - `type.go`: Type definitions (not shown in directory but referenced)
 
 ## Patterns and Conventions

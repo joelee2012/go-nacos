@@ -92,13 +92,13 @@ func TestAccNamespaceCRUD(t *testing.T) {
 	assert.Equal(t, "Updated Namespace", ns.Name)
 
 	// Cleanup (will fail if namespace contains configs)
-	err = client.DeleteNamespace(ctx, nsID, false)
+	err = client.DeleteNamespace(ctx, nsID)
 	assert.NoError(t, err)
 
 	// Verify deletion
-	_, err = client.GetNamespace(ctx, nsID)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "404 Not Found")
+	ns, err = client.GetNamespace(ctx, nsID)
+	assert.NoError(t, err)
+	assert.Nil(t, ns)
 }
 
 func TestAccConfigCRUD(t *testing.T) {
@@ -115,7 +115,7 @@ func TestAccConfigCRUD(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	defer func() {
-		_ = client.DeleteNamespace(ctx, nsID, false)
+		_ = client.DeleteNamespace(ctx, nsID)
 	}()
 
 	// Create config
@@ -198,9 +198,9 @@ func TestAccUserCRUD(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify deletion
-	_, err = client.GetUser(ctx, username)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "404 Not Found")
+	user, err = client.GetUser(ctx, username)
+	assert.NoError(t, err)
+	assert.Nil(t, user)
 }
 
 func TestAccRoleCRUD(t *testing.T) {
@@ -233,8 +233,9 @@ func TestAccRoleCRUD(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify deletion
-	_, err = client.GetRole(ctx, roleName, username)
-	assert.Error(t, err)
+	role, err = client.GetRole(ctx, roleName, username)
+	assert.NoError(t, err)
+	assert.Nil(t, role)
 }
 
 func TestAccPermissionCRUD(t *testing.T) {
@@ -276,6 +277,7 @@ func TestAccPermissionCRUD(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify deletion
-	_, err = client.GetPermission(ctx, roleName, resource, action)
-	assert.Error(t, err)
+	perm, err = client.GetPermission(ctx, roleName, resource, action)
+	assert.NoError(t, err)
+	assert.Nil(t, perm)
 }

@@ -172,19 +172,10 @@ func (c *Client) CreateNamespace(ctx context.Context, opts *CreateNsOpts) error 
 	return checkErr(resp, err)
 }
 
-func (c *Client) DeleteNamespace(ctx context.Context, id string, force bool) error {
+func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
-	}
-	if !force {
-		cfgs, err := c.ListConfigInNs(ctx, id, "")
-		if err != nil {
-			return err
-		}
-		if cfgs.TotalCount != 0 {
-			return fmt.Errorf("configruation exists in namespace, must set force to delete")
-		}
 	}
 	v := url.Values{}
 	v.Add("namespaceId", id)
@@ -232,7 +223,7 @@ func (c *Client) GetNamespace(ctx context.Context, id string) (*Namespace, error
 			return ns, nil
 		}
 	}
-	return nil, fmt.Errorf("404 Not Found %s", id)
+	return nil, nil
 }
 
 type GetCfgOpts struct {
@@ -264,10 +255,6 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 		err = decode(resp, err, cfg.Data)
 	}
 
-	// if config not found, nacos server return 200 and empty response
-	if err == io.EOF || cfg.Data == nil {
-		return nil, fmt.Errorf("404 Not Found %w", err)
-	}
 	return cfg.Data, err
 }
 
@@ -445,7 +432,7 @@ func (c *Client) GetUser(ctx context.Context, name string) (*User, error) {
 			return user, nil
 		}
 	}
-	return nil, fmt.Errorf("404 Not Found %s", name)
+	return nil, nil
 }
 
 func (c *Client) CreateRole(ctx context.Context, name, username string) error {
@@ -490,7 +477,7 @@ func (c *Client) GetRole(ctx context.Context, name, username string) (*Role, err
 	if roles.Contains(r) {
 		return &r, nil
 	}
-	return nil, fmt.Errorf("404 Not Found %s:%s", name, username)
+	return nil, nil
 }
 
 func (c *Client) CreatePermission(ctx context.Context, role, resource, permission string) error {
@@ -537,7 +524,7 @@ func (c *Client) GetPermission(ctx context.Context, role, resource, action strin
 	if perms.Contains(p) {
 		return &p, nil
 	}
-	return nil, fmt.Errorf("404 Not Found %s:%s:%s", role, resource, action)
+	return nil, nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, body io.Reader) (*http.Response, error) {
@@ -565,20 +552,24 @@ func checkStatus(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		if err != nil {
-			return fmt.Errorf("%s %s %w", resp.Status, resp.Request.URL, err)
+			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: err}
 		}
 		// no data or html data
 		if len(data) == 0 || data[0] == '<' {
-			return fmt.Errorf("%s %s", resp.Status, resp.Request.URL)
+			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String()}
 		}
-		return fmt.Errorf("%s %s %s", resp.Status, resp.Request.URL, data)
+		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: fmt.Errorf("%s", data)}
 	}
 	return nil
 }
 
 func checkErr(resp *http.Response, httpErr error) error {
 	if httpErr != nil {
-		return httpErr
+		return NacosErr{
+			Code: resp.StatusCode,
+			Err:  httpErr,
+			URL:  resp.Request.URL.String(),
+		}
 	}
 	defer resp.Body.Close()
 	return checkStatus(resp)
@@ -599,16 +590,18 @@ type NacosErr struct {
 	Code int
 	Err  error
 	URL  string
-	Msg  string
 }
 
 func (e NacosErr) Error() string {
-	return fmt.Sprintf("%d %s: %s", e.Code, e.URL, e.Err.Error())
+	if e.Err != nil {
+		return fmt.Sprintf("%d %s %s", e.Code, e.URL, e.Err.Error())
+	}
+	return fmt.Sprintf("%d %s", e.Code, e.URL)
 }
 
 func (e NacosErr) Unwrap() error {
 	return e.Err
 }
 func (e NacosErr) NotFound() bool {
-	return e.Code == 404
+	return e.Code == http.StatusNotFound
 }

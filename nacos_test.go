@@ -182,7 +182,7 @@ func TestGetToken(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Equal(t, "", token)
-				assert.Equal(t, err.Error(), fmt.Sprintf("404 Not Found %s/v1/auth/login", tt.server.URL))
+				assert.Equal(t, fmt.Sprintf("404 %s/v1/auth/login", tt.server.URL), err.Error())
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, "test-token", token)
@@ -241,7 +241,7 @@ func TestDeleteNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			err := c.DeleteNamespace(context.Background(), "test-id", false)
+			err := c.DeleteNamespace(context.Background(), "test-id")
 			assert.NoError(t, err)
 		})
 	}
