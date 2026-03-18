@@ -115,7 +115,7 @@ func (c *Client) GetVersion(ctx context.Context) (string, error) {
 		return c.Version, nil
 	}
 	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
-	err = decodeJson(resp, err, &c.State)
+	err = decode(resp, err, &c.State)
 	if err != nil {
 		return "", err
 	}
@@ -131,7 +131,7 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	v.Add("password", c.Password)
 	now := time.Now().Unix()
 	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, nil)
-	err = decodeJson(resp, err, &c.Token)
+	err = decode(resp, err, &c.Token)
 	if err != nil {
 		return "", err
 	}
@@ -148,7 +148,7 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	v.Add("accessToken", token)
 	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, nil)
 	namespaces := new(NamespaceList)
-	err = decodeJson(resp, err, namespaces)
+	err = decode(resp, err, namespaces)
 	return namespaces, err
 }
 
@@ -249,13 +249,13 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, nil)
 	cfg := new(ConfigurationV3)
 	if c.APIVersion == "v3" {
-		err = decodeJson(resp, err, cfg)
+		err = decode(resp, err, cfg)
 	} else {
 		cfg.Data = new(Configuration)
-		err = decodeJson(resp, err, cfg.Data)
+		err = decode(resp, err, cfg.Data)
 	}
 	// if config not found, nacos server return 200 and empty response
-	if err == io.EOF || cfg.Data == nil {
+	if err == io.EOF {
 		return nil, nil
 	}
 	return cfg.Data, err
@@ -300,9 +300,9 @@ func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*Configurat
 	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, nil)
 	cfgList := new(ConfigurationListV3)
 	if c.APIVersion == "v3" {
-		err = decodeJson(resp, err, cfgList)
+		err = decode(resp, err, cfgList)
 	} else {
-		err = decodeJson(resp, err, &cfgList.Data)
+		err = decode(resp, err, &cfgList.Data)
 	}
 	return &cfgList.Data, err
 }
@@ -578,7 +578,7 @@ func checkErr(resp *http.Response, httpErr error) error {
 	return checkStatus(resp)
 }
 
-func decodeJson(resp *http.Response, httpErr error, v any) error {
+func decode(resp *http.Response, httpErr error, v any) error {
 	if httpErr != nil {
 		return httpErr
 	}
