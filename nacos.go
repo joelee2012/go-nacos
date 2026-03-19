@@ -548,8 +548,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 	return http.DefaultClient.Do(req)
 }
 
-// Service operations
-
 func checkStatus(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
