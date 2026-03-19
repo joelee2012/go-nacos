@@ -67,7 +67,7 @@ func TestAccNamespaceCRUD(t *testing.T) {
 
 	// Create
 	nsID := randomID()
-	opts := &nacos.CreateNsOpts{
+	opts := &nacos.NsOpts{
 		Name:        "Test Namespace",
 		Description: "Acceptance test namespace",
 		ID:          nsID,
@@ -109,7 +109,7 @@ func TestAccConfigCRUD(t *testing.T) {
 
 	// Setup test namespace
 	nsID := randomID()
-	err := client.CreateNamespace(ctx, &nacos.CreateNsOpts{
+	err := client.CreateNamespace(ctx, &nacos.NsOpts{
 		Name: "Config Test NS",
 		ID:   nsID,
 	})
@@ -121,7 +121,7 @@ func TestAccConfigCRUD(t *testing.T) {
 	// Create config
 	cfgDataID := "test-config" + randomID()
 	cfgContent := "test.key=test.value"
-	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+	err = client.CreateConfig(ctx, &nacos.CfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
@@ -141,7 +141,7 @@ func TestAccConfigCRUD(t *testing.T) {
 
 	// Update config
 	updatedContent := "test.key=updated.value"
-	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+	err = client.CreateConfig(ctx, &nacos.CfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
