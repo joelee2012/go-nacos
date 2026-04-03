@@ -18,6 +18,7 @@ package nacos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -558,7 +559,7 @@ func checkStatus(resp *http.Response) error {
 		if len(data) == 0 || data[0] == '<' {
 			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String()}
 		}
-		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: fmt.Errorf("%s", data)}
+		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: errors.New(string(data))}
 	}
 	return nil
 }
