@@ -215,7 +215,7 @@ func TestCreateNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			err := c.CreateNamespace(context.Background(), &CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
+			err := c.CreateNamespace(context.Background(), &NsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
 			assert.NoError(t, err)
 		})
 	}
@@ -253,7 +253,7 @@ func TestUpdateNamespace(t *testing.T) {
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
 			c.APIVersion = tt.apiVersion
-			err := c.UpdateNamespace(context.Background(), &CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
+			err := c.UpdateNamespace(context.Background(), &NsOpts{Name: "test", Description: "Test namespace", ID: "test-id"})
 			assert.NoError(t, err)
 		})
 	}
@@ -264,10 +264,10 @@ func TestCreateOrUpdateNamespace(t *testing.T) {
 
 	tests := []struct {
 		name string
-		data CreateNsOpts
+		data NsOpts
 	}{
-		{name: "Create", data: CreateNsOpts{Name: "test", Description: "Test namespace", ID: "test"}},
-		{name: "Update", data: CreateNsOpts{Name: "test-id", Description: "Test namespace", ID: "test-id"}},
+		{name: "Create", data: NsOpts{Name: "test", Description: "Test namespace", ID: "test"}},
+		{name: "Update", data: NsOpts{Name: "test-id", Description: "Test namespace", ID: "test-id"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -341,7 +341,7 @@ func TestCreateConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.CreateConfig(context.Background(), &CreateCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
+	err := c.CreateConfig(context.Background(), &CfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
 	assert.NoError(t, err)
 }
 

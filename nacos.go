@@ -18,6 +18,7 @@ package nacos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -152,13 +153,13 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	return namespaces, err
 }
 
-type CreateNsOpts struct {
+type NsOpts struct {
 	Name        string
 	Description string
 	ID          string
 }
 
-func (c *Client) CreateNamespace(ctx context.Context, opts *CreateNsOpts) error {
+func (c *Client) CreateNamespace(ctx context.Context, opts *NsOpts) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
@@ -184,7 +185,7 @@ func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
 	return checkErr(resp, err)
 }
 
-func (c *Client) UpdateNamespace(ctx context.Context, opts *CreateNsOpts) error {
+func (c *Client) UpdateNamespace(ctx context.Context, opts *NsOpts) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
@@ -200,7 +201,7 @@ func (c *Client) UpdateNamespace(ctx context.Context, opts *CreateNsOpts) error 
 	return checkErr(resp, err)
 }
 
-func (c *Client) CreateOrUpdateNamespace(ctx context.Context, opts *CreateNsOpts) error {
+func (c *Client) CreateOrUpdateNamespace(ctx context.Context, opts *NsOpts) error {
 	nsList, err := c.ListNamespace(ctx)
 	if err != nil {
 		return err
@@ -263,7 +264,6 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 
 type ListCfgOpts struct {
 	Application string
-	Content     string
 	DataID      string
 	Group       string
 	NamespaceID string
@@ -340,7 +340,7 @@ func (c *Client) ListAllConfig(ctx context.Context) (*ConfigurationList, error) 
 	return allCs, nil
 }
 
-type CreateCfgOpts struct {
+type CfgOpts struct {
 	Application string
 	Content     string
 	DataID      string
@@ -351,7 +351,7 @@ type CreateCfgOpts struct {
 	Type        string
 }
 
-func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
+func (c *Client) CreateConfig(ctx context.Context, opts *CfgOpts) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
@@ -549,8 +549,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 	return http.DefaultClient.Do(req)
 }
 
-// Service operations
-
 func checkStatus(resp *http.Response) error {
 	if resp.StatusCode != http.StatusOK {
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -561,7 +559,7 @@ func checkStatus(resp *http.Response) error {
 		if len(data) == 0 || data[0] == '<' {
 			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String()}
 		}
-		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: fmt.Errorf("%s", data)}
+		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: errors.New(string(data))}
 	}
 	return nil
 }
@@ -605,6 +603,6 @@ func (e NacosErr) Error() string {
 func (e NacosErr) Unwrap() error {
 	return e.Err
 }
-func (e NacosErr) NotFound() bool {
+func (e NacosErr) IsNotFound() bool {
 	return e.Code == http.StatusNotFound
 }
