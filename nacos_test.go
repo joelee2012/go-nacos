@@ -341,7 +341,7 @@ func TestCreateConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	err := c.CreateConfig(context.Background(), &CfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
+	err := c.CreateConfig(context.Background(), &CreateCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
 	assert.NoError(t, err)
 }
 

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -313,7 +312,7 @@ func (c *Client) ListConfigInNs(ctx context.Context, namespace, group string) (*
 	for {
 		cs, err := c.ListConfig(ctx, &listOpts)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		nsCs.Items = append(nsCs.Items, cs.Items...)
 		if cs.PagesAvailable == 0 || cs.PagesAvailable == cs.PageNumber {
@@ -340,7 +339,7 @@ func (c *Client) ListAllConfig(ctx context.Context) (*ConfigurationList, error) 
 	return allCs, nil
 }
 
-type CfgOpts struct {
+type CreateCfgOpts struct {
 	Application string
 	Content     string
 	DataID      string
@@ -351,7 +350,7 @@ type CfgOpts struct {
 	Type        string
 }
 
-func (c *Client) CreateConfig(ctx context.Context, opts *CfgOpts) error {
+func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
@@ -566,11 +565,10 @@ func checkStatus(resp *http.Response) error {
 
 func checkErr(resp *http.Response, httpErr error) error {
 	if httpErr != nil {
-		return NacosErr{
-			Code: resp.StatusCode,
-			Err:  httpErr,
-			URL:  resp.Request.URL.String(),
+		if resp != nil {
+			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: httpErr}
 		}
+		return NacosErr{Err: httpErr}
 	}
 	defer resp.Body.Close()
 	return checkStatus(resp)
