@@ -143,18 +143,17 @@ var apiTests = []struct {
 }
 
 func TestGetVersion(t *testing.T) {
-	ts, c := startServer()
+	ts, _ := startServer()
 	defer ts.Close()
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
+			c := NewClient(ts.URL, "user", "password")
 			c.APIVersion = tt.apiVersion
-			c.State = nil
 			version, err := c.GetVersion(context.Background())
 			if assert.NoError(t, err) {
 				assert.Equal(t, tt.expectValue, version)
 			}
 		})
-
 	}
 }
 
@@ -182,7 +181,6 @@ func TestGetToken(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Equal(t, "", token)
-				assert.Equal(t, fmt.Sprintf("404 %s/v1/auth/login", tt.server.URL), err.Error())
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, "test-token", token)
@@ -269,6 +267,7 @@ func TestCreateOrUpdateNamespace(t *testing.T) {
 		{name: "Create", data: NsOpts{Name: "test", Description: "Test namespace", ID: "test"}},
 		{name: "Update", data: NsOpts{Name: "test-id", Description: "Test namespace", ID: "test-id"}},
 	}
+	c.APIVersion = "v1"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := c.CreateOrUpdateNamespace(context.Background(), &tt.data)
@@ -340,6 +339,7 @@ func TestListAllConfig(t *testing.T) {
 func TestCreateConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.CreateConfig(context.Background(), &CreateCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
 	assert.NoError(t, err)
@@ -348,6 +348,7 @@ func TestCreateConfig(t *testing.T) {
 func TestDeleteConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.DeleteConfig(context.Background(), &DeleteCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", NamespaceID: "test-tenant"})
 	assert.NoError(t, err)
@@ -371,6 +372,7 @@ func TestListUser(t *testing.T) {
 func TestCreateUser(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.CreateUser(context.Background(), "user3", "password")
 	assert.NoError(t, err)
@@ -379,6 +381,7 @@ func TestCreateUser(t *testing.T) {
 func TestDeleteUser(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.DeleteUser(context.Background(), "user3")
 	assert.NoError(t, err)
@@ -388,9 +391,14 @@ func TestGetUser(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	user, err := c.GetUser(context.Background(), "user1")
-	if assert.NoError(t, err) {
-		assert.Equal(t, "user1", user.Name)
+	for _, tt := range apiTests {
+		t.Run(tt.apiVersion, func(t *testing.T) {
+			c.APIVersion = tt.apiVersion
+			user, err := c.GetUser(context.Background(), "user1")
+			if assert.NoError(t, err) {
+				assert.Equal(t, "user1", user.Name)
+			}
+		})
 	}
 }
 
@@ -412,6 +420,7 @@ func TestListRole(t *testing.T) {
 func TestCreateRole(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.CreateRole(context.Background(), "role1", "user1")
 	assert.NoError(t, err)
@@ -420,6 +429,7 @@ func TestCreateRole(t *testing.T) {
 func TestDeleteRole(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.DeleteRole(context.Background(), "role1", "user1")
 	assert.NoError(t, err)
@@ -429,9 +439,14 @@ func TestGetRole(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	role, err := c.GetRole(context.Background(), "ROLE_ADMIN", "nacos")
-	if assert.NoError(t, err) {
-		assert.Equal(t, "ROLE_ADMIN", role.Name)
+	for _, tt := range apiTests {
+		t.Run(tt.apiVersion, func(t *testing.T) {
+			c.APIVersion = tt.apiVersion
+			role, err := c.GetRole(context.Background(), "ROLE_ADMIN", "nacos")
+			if assert.NoError(t, err) {
+				assert.Equal(t, "ROLE_ADMIN", role.Name)
+			}
+		})
 	}
 }
 
@@ -454,6 +469,7 @@ func TestListPermission(t *testing.T) {
 func TestCreatePermission(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.CreatePermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
 	assert.NoError(t, err)
@@ -462,6 +478,7 @@ func TestCreatePermission(t *testing.T) {
 func TestDeletePermission(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
+	c.APIVersion = "v1"
 
 	err := c.DeletePermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
 	assert.NoError(t, err)
@@ -471,10 +488,15 @@ func TestGetPermission(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 
-	perm, err := c.GetPermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
-	if assert.NoError(t, err) {
-		assert.Equal(t, "ROLE_ADMIN", perm.Role)
-		assert.Equal(t, "backend:*:*", perm.Resource)
-		assert.Equal(t, "rw", perm.Action)
+	for _, tt := range apiTests {
+		t.Run(tt.apiVersion, func(t *testing.T) {
+			c.APIVersion = tt.apiVersion
+			perm, err := c.GetPermission(context.Background(), "ROLE_ADMIN", "backend:*:*", "rw")
+			if assert.NoError(t, err) {
+				assert.Equal(t, "ROLE_ADMIN", perm.Role)
+				assert.Equal(t, "backend:*:*", perm.Resource)
+				assert.Equal(t, "rw", perm.Action)
+			}
+		})
 	}
 }

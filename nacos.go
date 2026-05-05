@@ -36,7 +36,9 @@ type Client struct {
 	APIVersion string
 	*Token
 	*State
-	mu sync.Mutex
+	mu         sync.Mutex
+	detectOnce sync.Once
+	detectErr  error
 }
 type Token struct {
 	AccessToken string `json:"accessToken"`
@@ -92,39 +94,35 @@ var api = map[string]map[string]string{
 }
 
 func NewClient(url, user, password string) *Client {
-	client := &Client{
+	return &Client{
 		URL:      url,
 		User:     user,
 		Password: password,
 	}
-	client.DetectAPIVersion(context.Background())
-	return client
-}
-
-func (c *Client) DetectAPIVersion(ctx context.Context) {
-	for _, ver := range []string{"v3", "v1"} {
-		c.APIVersion = ver
-		v, err := c.GetVersion(ctx)
-		if err == nil && v != "" {
-			return
-		}
-	}
-	c.APIVersion = "v1"
 }
 
 func (c *Client) GetVersion(ctx context.Context) (string, error) {
-	if c.State != nil {
-		return c.Version, nil
+	getState := func(ctx context.Context) error {
+		for _, ver := range []string{"v3", "v1"} {
+			resp, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, nil)
+			err = decode(resp, err, &c.State)
+			if err == nil && c.State != nil && c.State.Version != "" {
+				c.APIVersion = ver
+				return nil
+			}
+		}
+		return fmt.Errorf("unable to get api version")
 	}
-	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
-	err = decode(resp, err, &c.State)
-	if err != nil {
-		return "", err
-	}
-	return c.Version, err
+	c.detectOnce.Do(func() {
+		c.detectErr = getState(ctx)
+	})
+	return c.Version, c.detectErr
 }
 
 func (c *Client) GetToken(ctx context.Context) (string, error) {
+	if _, err := c.GetVersion(ctx); err != nil {
+		return "", err
+	}
 	if c.Token != nil && !c.Token.Expired() {
 		return c.AccessToken, nil
 	}
