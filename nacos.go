@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,6 +36,7 @@ type Client struct {
 	APIVersion string
 	*Token
 	*State
+	mu sync.Mutex
 }
 type Token struct {
 	AccessToken string `json:"accessToken"`
@@ -126,6 +128,14 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	if c.Token != nil && !c.Token.Expired() {
 		return c.AccessToken, nil
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.Token != nil && !c.Token.Expired() {
+		return c.AccessToken, nil
+	}
+
 	v := url.Values{}
 	v.Add("username", c.User)
 	v.Add("password", c.Password)
@@ -136,7 +146,7 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 	c.ExpiredAt = now + c.TokenTTL
-	return c.AccessToken, err
+	return c.AccessToken, nil
 }
 
 func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
