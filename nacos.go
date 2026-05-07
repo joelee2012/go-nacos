@@ -50,7 +50,7 @@ type Token struct {
 }
 
 func (t *Token) Expired() bool {
-	return time.Now().After(time.Unix(t.ExpiredAt, 0))
+	return time.Now().After(time.Unix(t.ExpiredAt-30, 0))
 }
 
 type State struct {
@@ -147,13 +147,12 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	v := url.Values{}
 	v.Add("username", c.User)
 	v.Add("password", c.Password)
-	now := time.Now().Unix()
 	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, nil)
 	err = decode(resp, err, &c.Token)
 	if err != nil {
 		return "", err
 	}
-	c.ExpiredAt = now + c.TokenTTL
+	c.ExpiredAt = time.Now().Unix() + c.TokenTTL
 	return c.AccessToken, nil
 }
 
