@@ -35,8 +35,8 @@ type Client struct {
 	Password   string
 	APIVersion string
 	HTTPClient *http.Client
-	*Token
-	*State
+	Token *Token
+	State *State
 	mu         sync.Mutex
 	detectOnce sync.Once
 	detectErr  error
@@ -111,7 +111,7 @@ func (c *Client) getVersion(ctx context.Context) error {
 	for _, ver := range []string{"v3", "v1"} {
 		resp, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, nil)
 		err = decode(resp, err, &c.State)
-		if err == nil && c.Version != "" {
+		if err == nil && c.State.Version != "" {
 			c.APIVersion = ver
 			return nil
 		}
@@ -134,14 +134,14 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if c.Token != nil && !c.Token.Expired() {
-		return c.AccessToken, nil
+		return c.Token.AccessToken, nil
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.Token != nil && !c.Token.Expired() {
-		return c.AccessToken, nil
+		return c.Token.AccessToken, nil
 	}
 
 	v := url.Values{}
@@ -152,8 +152,8 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c.ExpiredAt = time.Now().Unix() + c.TokenTTL
-	return c.AccessToken, nil
+	c.Token.ExpiredAt = time.Now().Unix() + c.Token.TokenTTL
+	return c.Token.AccessToken, nil
 }
 
 func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
