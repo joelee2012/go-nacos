@@ -34,6 +34,7 @@ type Client struct {
 	User       string
 	Password   string
 	APIVersion string
+	HTTPClient *http.Client
 	*Token
 	*State
 	mu         sync.Mutex
@@ -95,9 +96,10 @@ var api = map[string]map[string]string{
 
 func NewClient(url, user, password string) *Client {
 	return &Client{
-		URL:      url,
-		User:     user,
-		Password: password,
+		URL:        url,
+		User:       user,
+		Password:   password,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -561,7 +563,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 			}
 		}
 	}
-	return http.DefaultClient.Do(req)
+	return c.HTTPClient.Do(req)
 }
 
 func checkStatus(resp *http.Response) error {
