@@ -101,22 +101,31 @@ func NewClient(url, user, password string) *Client {
 	}
 }
 
-func (c *Client) GetVersion(ctx context.Context) (string, error) {
-	getState := func(ctx context.Context) error {
+func (c *Client) getVersion(ctx context.Context) error {
+	if c.APIVersion != "" {
+		resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
+		return decode(resp, err, &c.State)
+	} else {
 		for _, ver := range []string{"v3", "v1"} {
 			resp, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, nil)
 			err = decode(resp, err, &c.State)
-			if err == nil && c.State != nil && c.State.Version != "" {
+			if err == nil && c.State != nil && c.Version != "" {
 				c.APIVersion = ver
 				return nil
 			}
 		}
 		return fmt.Errorf("unable to get api version")
 	}
+}
+
+func (c *Client) GetVersion(ctx context.Context) (string, error) {
 	c.detectOnce.Do(func() {
-		c.detectErr = getState(ctx)
+		c.detectErr = c.getVersion(ctx)
 	})
-	return c.Version, c.detectErr
+	if c.detectErr != nil {
+		return "", c.detectErr
+	}
+	return c.State.Version, nil
 }
 
 func (c *Client) GetToken(ctx context.Context) (string, error) {
