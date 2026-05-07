@@ -155,6 +155,14 @@ func TestGetVersion(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("empty", func(t *testing.T) {
+		c := NewClient(ts.URL, "user", "password")
+		version, err := c.GetVersion(context.Background())
+		if assert.NoError(t, err) {
+			assert.Equal(t, "3.0.0", version)
+		}
+	})
 }
 
 func TestGetToken(t *testing.T) {

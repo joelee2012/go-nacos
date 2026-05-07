@@ -105,17 +105,16 @@ func (c *Client) getVersion(ctx context.Context) error {
 	if c.APIVersion != "" {
 		resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
 		return decode(resp, err, &c.State)
-	} else {
-		for _, ver := range []string{"v3", "v1"} {
-			resp, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, nil)
-			err = decode(resp, err, &c.State)
-			if err == nil && c.State != nil && c.Version != "" {
-				c.APIVersion = ver
-				return nil
-			}
-		}
-		return fmt.Errorf("unable to get api version")
 	}
+	for _, ver := range []string{"v3", "v1"} {
+		resp, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, nil)
+		err = decode(resp, err, &c.State)
+		if err == nil && c.Version != "" {
+			c.APIVersion = ver
+			return nil
+		}
+	}
+	return fmt.Errorf("unable to get api version")
 }
 
 func (c *Client) GetVersion(ctx context.Context) (string, error) {
