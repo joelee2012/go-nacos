@@ -21,11 +21,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,8 +34,12 @@ type Client struct {
 	User       string
 	Password   string
 	APIVersion string
-	*Token
-	*State
+	HTTPClient *http.Client
+	Token *Token
+	State *State
+	mu         sync.Mutex
+	detectOnce sync.Once
+	detectErr  error
 }
 type Token struct {
 	AccessToken string `json:"accessToken"`
@@ -46,7 +50,7 @@ type Token struct {
 }
 
 func (t *Token) Expired() bool {
-	return time.Now().After(time.Unix(t.ExpiredAt, 0))
+	return time.Now().After(time.Unix(t.ExpiredAt-30, 0))
 }
 
 type State struct {
@@ -91,53 +95,65 @@ var api = map[string]map[string]string{
 }
 
 func NewClient(url, user, password string) *Client {
-	client := &Client{
-		URL:      url,
-		User:     user,
-		Password: password,
+	return &Client{
+		URL:        url,
+		User:       user,
+		Password:   password,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
-	client.DetectAPIVersion(context.Background())
-	return client
 }
 
-func (c *Client) DetectAPIVersion(ctx context.Context) {
+func (c *Client) getVersion(ctx context.Context) error {
+	if c.APIVersion != "" {
+		resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
+		return decode(resp, err, &c.State)
+	}
 	for _, ver := range []string{"v3", "v1"} {
-		c.APIVersion = ver
-		v, err := c.GetVersion(ctx)
-		if err == nil && v != "" {
-			return
+		resp, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, nil)
+		err = decode(resp, err, &c.State)
+		if err == nil && c.State.Version != "" {
+			c.APIVersion = ver
+			return nil
 		}
 	}
-	c.APIVersion = "v1"
+	return fmt.Errorf("unable to get api version")
 }
 
 func (c *Client) GetVersion(ctx context.Context) (string, error) {
-	if c.State != nil {
-		return c.Version, nil
+	c.detectOnce.Do(func() {
+		c.detectErr = c.getVersion(ctx)
+	})
+	if c.detectErr != nil {
+		return "", c.detectErr
 	}
-	resp, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, nil)
-	err = decode(resp, err, &c.State)
-	if err != nil {
-		return "", err
-	}
-	return c.Version, err
+	return c.State.Version, nil
 }
 
 func (c *Client) GetToken(ctx context.Context) (string, error) {
-	if c.Token != nil && !c.Token.Expired() {
-		return c.AccessToken, nil
+	if _, err := c.GetVersion(ctx); err != nil {
+		return "", err
 	}
+	if c.Token != nil && !c.Token.Expired() {
+		return c.Token.AccessToken, nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.Token != nil && !c.Token.Expired() {
+		return c.Token.AccessToken, nil
+	}
+
 	v := url.Values{}
 	v.Add("username", c.User)
 	v.Add("password", c.Password)
-	now := time.Now().Unix()
 	resp, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, nil)
 	err = decode(resp, err, &c.Token)
 	if err != nil {
 		return "", err
 	}
-	c.ExpiredAt = now + c.TokenTTL
-	return c.AccessToken, err
+	c.Token.ExpiredAt = time.Now().Unix() + c.Token.TokenTTL
+	return c.Token.AccessToken, nil
 }
 
 func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
@@ -313,7 +329,7 @@ func (c *Client) ListConfigInNs(ctx context.Context, namespace, group string) (*
 	for {
 		cs, err := c.ListConfig(ctx, &listOpts)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		nsCs.Items = append(nsCs.Items, cs.Items...)
 		if cs.PagesAvailable == 0 || cs.PagesAvailable == cs.PageNumber {
@@ -340,7 +356,7 @@ func (c *Client) ListAllConfig(ctx context.Context) (*ConfigurationList, error) 
 	return allCs, nil
 }
 
-type CfgOpts struct {
+type CreateCfgOpts struct {
 	Application string
 	Content     string
 	DataID      string
@@ -351,7 +367,7 @@ type CfgOpts struct {
 	Type        string
 }
 
-func (c *Client) CreateConfig(ctx context.Context, opts *CfgOpts) error {
+func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
@@ -546,7 +562,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 			}
 		}
 	}
-	return http.DefaultClient.Do(req)
+	return c.HTTPClient.Do(req)
 }
 
 func checkStatus(resp *http.Response) error {
@@ -566,11 +582,10 @@ func checkStatus(resp *http.Response) error {
 
 func checkErr(resp *http.Response, httpErr error) error {
 	if httpErr != nil {
-		return NacosErr{
-			Code: resp.StatusCode,
-			Err:  httpErr,
-			URL:  resp.Request.URL.String(),
+		if resp != nil {
+			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: httpErr}
 		}
+		return NacosErr{Err: httpErr}
 	}
 	defer resp.Body.Close()
 	return checkStatus(resp)
