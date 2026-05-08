@@ -35,8 +35,8 @@ type Client struct {
 	Password   string
 	APIVersion string
 	HTTPClient *http.Client
-	Token *Token
-	State *State
+	Token      *Token
+	State      *State
 	mu         sync.Mutex
 	detectOnce sync.Once
 	detectErr  error
