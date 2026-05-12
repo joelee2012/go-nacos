@@ -32,13 +32,16 @@ func createTestClient(t *testing.T) *nacos.Client {
 		host = "https://" + host
 	}
 
-	client := nacos.NewClient(host, user, password)
+	client, err := nacos.NewClient(host, user, password)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
 
 	// Verify client can connect
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := client.GetVersion(ctx)
+	_, err = client.GetVersion(ctx)
 	if err != nil {
 		t.Fatalf("Failed to initialize client: %v", err)
 	}

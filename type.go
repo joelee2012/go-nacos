@@ -170,8 +170,8 @@ func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, e
 	v.Add("pageSize", "100")
 	for {
 		var lst L
-		data, err := c.doRequest(ctx, http.MethodGet, endpoint, v)
-		if err := decode(data, err, &lst); err != nil {
+		err := c.doRequest(ctx, http.MethodGet, endpoint, v, &lst)
+		if err != nil {
 			return nil, err
 		}
 		all.Items = append(all.Items, lst.All()...)

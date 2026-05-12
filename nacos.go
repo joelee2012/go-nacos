@@ -116,7 +116,7 @@ func (c *Client) getVersion(ctx context.Context) error {
 		return c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &c.State)
 	}
 	for _, ver := range []string{"v3", "v1"} {
-		err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &c.State)
+		err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &c.State)
 		if err == nil && c.State.Version != "" {
 			c.APIVersion = ver
 			return nil
@@ -153,8 +153,7 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	v := url.Values{}
 	v.Add("username", c.User)
 	v.Add("password", c.Password)
-	data, err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v)
-	err = decode(data, err, &c.Token)
+	err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, &c.Token)
 	if err != nil {
 		return "", err
 	}
@@ -169,9 +168,8 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	}
 	v := url.Values{}
 	v.Add("accessToken", token)
-	data, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v)
 	namespaces := new(NamespaceList)
-	err = decode(data, err, namespaces)
+	err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, namespaces)
 	return namespaces, err
 }
 
@@ -191,7 +189,7 @@ func (c *Client) CreateNamespace(ctx context.Context, opts *NsOpts) error {
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["ns"], v)
+	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["ns"], v, nil)
 	return err
 }
 
@@ -203,7 +201,7 @@ func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
 	v := url.Values{}
 	v.Add("namespaceId", id)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["ns"], v)
+	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["ns"], v, nil)
 	return err
 }
 
@@ -219,7 +217,7 @@ func (c *Client) UpdateNamespace(ctx context.Context, opts *NsOpts) error {
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodPut, api[c.APIVersion]["ns"], v)
+	err = c.doRequest(ctx, http.MethodPut, api[c.APIVersion]["ns"], v, nil)
 	return err
 }
 
@@ -269,13 +267,12 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	v.Add("show", "all")
 	v.Add("accessToken", token)
 
-	data, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v)
 	cfg := new(ConfigurationV3)
 	if c.APIVersion == "v3" {
-		err = decode(data, err, cfg)
+		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, cfg)
 	} else {
 		cfg.Data = new(Configuration)
-		err = decode(data, err, cfg.Data)
+		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, cfg.Data)
 	}
 	// if config not found, nacos server return 200 and empty response
 	if err == io.EOF {
@@ -319,12 +316,11 @@ func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*Configurat
 	v.Add("search", "accurate")
 	v.Add("accessToken", token)
 
-	data, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v)
 	cfgList := new(ConfigurationListV3)
 	if c.APIVersion == "v3" {
-		err = decode(data, err, cfgList)
+		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, cfgList)
 	} else {
-		err = decode(data, err, &cfgList.Data)
+		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &cfgList.Data)
 	}
 	return &cfgList.Data, err
 }
@@ -391,7 +387,7 @@ func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
 	v.Add("config_tags", opts.Tags)
 	v.Add("configTags", opts.Tags)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["cs"], v)
+	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["cs"], v, nil)
 	return err
 }
 
@@ -410,7 +406,7 @@ func (c *Client) DeleteConfig(ctx context.Context, opts *DeleteCfgOpts) error {
 	v.Add("namespaceId", opts.NamespaceID)
 	v.Add("accessToken", token)
 
-	_, err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["cs"], v)
+	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["cs"], v, nil)
 	return err
 }
 
@@ -423,7 +419,7 @@ func (c *Client) CreateUser(ctx context.Context, name, password string) error {
 	v.Add("username", name)
 	v.Add("password", password)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["user"], v)
+	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["user"], v, nil)
 	return err
 }
 
@@ -435,7 +431,7 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 	v := url.Values{}
 	v.Add("username", name)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["user"], v)
+	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["user"], v, nil)
 	return err
 }
 
@@ -469,7 +465,7 @@ func (c *Client) CreateRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["role"], v)
+	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["role"], v, nil)
 	return err
 }
 
@@ -482,7 +478,7 @@ func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["role"], v)
+	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["role"], v, nil)
 	return err
 }
 
@@ -515,7 +511,7 @@ func (c *Client) CreatePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["perm"], v)
+	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["perm"], v, nil)
 	return err
 }
 
@@ -529,7 +525,7 @@ func (c *Client) DeletePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	_, err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["perm"], v)
+	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["perm"], v, nil)
 	return err
 }
 
@@ -561,7 +557,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 			newUrl.RawQuery = values.Encode()
 		} else {
 			reqHeaders.Set("Content-Type", "application/x-www-form-urlencoded")
-			body = io.NopCloser(strings.NewReader(values.Encode()))
+			body = strings.NewReader(values.Encode())
 		}
 	}
 
@@ -592,16 +588,6 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 	}
 	return err
 
-}
-
-func decode(data []byte, httpErr error, v any) error {
-	if httpErr != nil {
-		return httpErr
-	}
-	if len(data) == 0 {
-		return io.EOF
-	}
-	return json.Unmarshal(data, v)
 }
 
 type NacosErr struct {
