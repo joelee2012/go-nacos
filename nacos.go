@@ -113,12 +113,10 @@ func NewClient(urlStr, user, password string) (*Client, error) {
 
 func (c *Client) getVersion(ctx context.Context) error {
 	if c.APIVersion != "" {
-		data, err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil)
-		return decode(data, err, &c.State)
+		return c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &c.State)
 	}
 	for _, ver := range []string{"v3", "v1"} {
-		data, err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil)
-		err = decode(data, err, &c.State)
+		err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &c.State)
 		if err == nil && c.State.Version != "" {
 			c.APIVersion = ver
 			return nil
@@ -554,27 +552,7 @@ func (c *Client) GetPermission(ctx context.Context, role, resource, action strin
 	return nil, nil
 }
 
-// func (c *Client) newRequest(ctx context.Context, method, path string, values url.Values) (*http.Request, error) {
-// 	newUrl := c.URL.JoinPath(path)
-
-// 	reqHeaders := make(http.Header)
-// 	var body io.Reader
-// 	if values != nil {
-// 		if method == http.MethodGet || method == http.MethodDelete {
-// 			newUrl.RawQuery = values.Encode()
-// 		} else {
-// 			reqHeaders.Set("Content-Type", "application/x-www-form-urlencoded")
-// 			body = io.NopCloser(strings.NewReader(values.Encode()))
-// 		}
-// 	}
-
-//		req, err := http.NewRequestWithContext(ctx, method, newUrl.String(), body)
-//		if err != nil {
-//			return nil, err
-//		}
-//		return req, nil
-//	}
-func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values) ([]byte, error) {
+func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, v any) error {
 	newUrl := c.URL.JoinPath(path)
 	reqHeaders := make(http.Header)
 	var body io.Reader
@@ -589,23 +567,30 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 
 	req, err := http.NewRequestWithContext(ctx, method, newUrl.String(), body)
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	for k, v := range reqHeaders {
+		req.Header[k] = v
 	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		// no data or html data
 		if len(data) == 0 || data[0] == '<' {
-			return nil, NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String()}
+			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String()}
 		}
-		return nil, NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: errors.New(string(data))}
+		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: errors.New(string(data))}
 	}
-	return io.ReadAll(resp.Body)
+	if v != nil {
+		err = json.NewDecoder(resp.Body).Decode(v)
+	}
+	return err
 
 }
 
