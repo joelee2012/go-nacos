@@ -545,6 +545,31 @@ func (c *Client) GetPermission(ctx context.Context, role, resource, action strin
 	return nil, ErrNotFound
 }
 
+func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, endpoint string) (*List[T], error) {
+	token, err := c.GetToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	all := new(List[T])
+	v := url.Values{}
+	v.Add("search", "accurate")
+	v.Add("accessToken", token)
+	v.Add("pageNo", "1")
+	v.Add("pageSize", "100")
+	for {
+		var lst L
+		if err := c.doRequest(ctx, http.MethodGet, endpoint, v, &lst); err != nil {
+			return nil, err
+		}
+		all.Items = append(all.Items, lst.All()...)
+		if lst.IsEnd() {
+			break
+		}
+		v.Set("pageNo", strconv.Itoa(lst.NextPageNumber()))
+	}
+	return all, nil
+}
+
 func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, v any) error {
 	newUrl := c.URL.JoinPath(path)
 	reqHeaders := make(http.Header)
