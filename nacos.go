@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -249,7 +250,12 @@ type GetCfgOpts struct {
 	NamespaceID string
 }
 
+var ErrConfigNotFound = errors.New("config not found")
+
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
+	if opts == nil {
+		return nil, errors.New("opts is nil")
+	}
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return nil, err
@@ -263,18 +269,23 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	v.Add("show", "all")
 	v.Add("accessToken", token)
 
-	cfg := new(ConfigurationV3)
+	var cfg *Configuration
 	if c.APIVersion == "v3" {
-		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, cfg)
+		var v3 ConfigurationV3
+		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v3)
+		cfg = v3.Data
 	} else {
-		cfg.Data = new(Configuration)
-		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, cfg.Data)
+		var v1 Configuration
+		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v1)
+		cfg = &v1
 	}
-	// if config not found, nacos server return 200 and empty response
-	if err == io.EOF {
-		return nil, nil
+	if err != nil {
+		if err == io.EOF {
+			return nil, ErrConfigNotFound
+		}
+		return nil, err
 	}
-	return cfg.Data, err
+	return cfg, nil
 }
 
 type ListCfgOpts struct {
@@ -552,9 +563,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 		return err
 	}
 
-	for k, v := range reqHeaders {
-		req.Header[k] = v
-	}
+	maps.Copy(req.Header, reqHeaders)
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -565,9 +574,9 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		// no data or html data
 		if len(data) == 0 || data[0] == '<' {
-			return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String()}
+			return NacosErr{Code: resp.StatusCode, URL: newUrl.String()}
 		}
-		return NacosErr{Code: resp.StatusCode, URL: resp.Request.URL.String(), Err: errors.New(string(data))}
+		return NacosErr{Code: resp.StatusCode, URL: newUrl.String(), Err: errors.New(string(data))}
 	}
 	if v != nil {
 		err = json.NewDecoder(resp.Body).Decode(v)
