@@ -241,7 +241,7 @@ func (c *Client) GetNamespace(ctx context.Context, id string) (*Namespace, error
 			return ns, nil
 		}
 	}
-	return nil, nil
+	return nil, ErrNotFound
 }
 
 type GetCfgOpts struct {
@@ -250,7 +250,7 @@ type GetCfgOpts struct {
 	NamespaceID string
 }
 
-var ErrConfigNotFound = errors.New("config not found")
+var ErrNotFound = errors.New("not found")
 
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
 	if opts == nil {
@@ -281,7 +281,7 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	}
 	if err != nil {
 		if err == io.EOF {
-			return nil, ErrConfigNotFound
+			return nil, ErrNotFound
 		}
 		return nil, err
 	}
@@ -454,7 +454,7 @@ func (c *Client) GetUser(ctx context.Context, name string) (*User, error) {
 			return user, nil
 		}
 	}
-	return nil, nil
+	return nil, ErrNotFound
 }
 
 func (c *Client) CreateRole(ctx context.Context, name, username string) error {
@@ -497,7 +497,7 @@ func (c *Client) GetRole(ctx context.Context, name, username string) (*Role, err
 	if roles.Contains(r) {
 		return &r, nil
 	}
-	return nil, nil
+	return nil, ErrNotFound
 }
 
 func (c *Client) CreatePermission(ctx context.Context, role, resource, permission string) error {
@@ -542,7 +542,7 @@ func (c *Client) GetPermission(ctx context.Context, role, resource, action strin
 	if perms.Contains(p) {
 		return &p, nil
 	}
-	return nil, nil
+	return nil, ErrNotFound
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, v any) error {
