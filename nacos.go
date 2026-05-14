@@ -169,8 +169,7 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	v := url.Values{}
 	v.Add("accessToken", token)
 	namespaces := new(NamespaceList)
-	err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, namespaces)
-	return namespaces, err
+	return namespaces, c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, namespaces)
 }
 
 type NsOpts struct {
@@ -189,8 +188,7 @@ func (c *Client) CreateNamespace(ctx context.Context, opts *NsOpts) error {
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["ns"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["ns"], v, nil)
 }
 
 func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
@@ -201,8 +199,7 @@ func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
 	v := url.Values{}
 	v.Add("namespaceId", id)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["ns"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["ns"], v, nil)
 }
 
 func (c *Client) UpdateNamespace(ctx context.Context, opts *NsOpts) error {
@@ -217,8 +214,7 @@ func (c *Client) UpdateNamespace(ctx context.Context, opts *NsOpts) error {
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodPut, api[c.APIVersion]["ns"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodPut, api[c.APIVersion]["ns"], v, nil)
 }
 
 func (c *Client) CreateOrUpdateNamespace(ctx context.Context, opts *NsOpts) error {
@@ -318,11 +314,9 @@ func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*Configurat
 
 	cfgList := new(ConfigurationListV3)
 	if c.APIVersion == "v3" {
-		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, cfgList)
-	} else {
-		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &cfgList.Data)
+		return &cfgList.Data, c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, cfgList)
 	}
-	return &cfgList.Data, err
+	return &cfgList.Data, c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &cfgList.Data)
 }
 
 func (c *Client) ListConfigInNs(ctx context.Context, namespace, group string) (*ConfigurationList, error) {
@@ -387,8 +381,7 @@ func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
 	v.Add("config_tags", opts.Tags)
 	v.Add("configTags", opts.Tags)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["cs"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["cs"], v, nil)
 }
 
 type DeleteCfgOpts = GetCfgOpts
@@ -406,8 +399,7 @@ func (c *Client) DeleteConfig(ctx context.Context, opts *DeleteCfgOpts) error {
 	v.Add("namespaceId", opts.NamespaceID)
 	v.Add("accessToken", token)
 
-	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["cs"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["cs"], v, nil)
 }
 
 func (c *Client) CreateUser(ctx context.Context, name, password string) error {
@@ -419,8 +411,7 @@ func (c *Client) CreateUser(ctx context.Context, name, password string) error {
 	v.Add("username", name)
 	v.Add("password", password)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["user"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["user"], v, nil)
 }
 
 func (c *Client) DeleteUser(ctx context.Context, name string) error {
@@ -431,8 +422,7 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 	v := url.Values{}
 	v.Add("username", name)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["user"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["user"], v, nil)
 }
 
 func (c *Client) ListUser(ctx context.Context) (*UserList, error) {
@@ -465,8 +455,7 @@ func (c *Client) CreateRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["role"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["role"], v, nil)
 }
 
 func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
@@ -478,8 +467,7 @@ func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["role"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["role"], v, nil)
 }
 
 func (c *Client) ListRole(ctx context.Context) (*RoleList, error) {
@@ -511,8 +499,7 @@ func (c *Client) CreatePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["perm"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["perm"], v, nil)
 }
 
 func (c *Client) DeletePermission(ctx context.Context, role, resource, permission string) error {
@@ -525,8 +512,7 @@ func (c *Client) DeletePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	err = c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["perm"], v, nil)
-	return err
+	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["perm"], v, nil)
 }
 
 func (c *Client) ListPermission(ctx context.Context) (*PermissionList, error) {
