@@ -100,7 +100,7 @@ func TestAccNamespaceCRUD(t *testing.T) {
 
 	// Verify deletion
 	ns, err = client.GetNamespace(ctx, nsID)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, ns)
 }
 
@@ -177,7 +177,7 @@ func TestAccConfigCRUD(t *testing.T) {
 		NamespaceID: nsID,
 	})
 
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, cfg)
 }
 
@@ -203,7 +203,7 @@ func TestAccUserCRUD(t *testing.T) {
 
 	// Verify deletion
 	user, err = client.GetUser(ctx, username)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, user)
 }
 
@@ -238,7 +238,7 @@ func TestAccRoleCRUD(t *testing.T) {
 
 	// Verify deletion
 	role, err = client.GetRole(ctx, roleName, username)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, role)
 }
 
@@ -282,6 +282,6 @@ func TestAccPermissionCRUD(t *testing.T) {
 
 	// Verify deletion
 	perm, err = client.GetPermission(ctx, roleName, resource, action)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, perm)
 }
