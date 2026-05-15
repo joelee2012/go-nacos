@@ -1,19 +1,39 @@
-/*
-Copyright © 2025 Joe Lee <lj_2005@163.com>
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
 package nacos
+
+var api = map[string]map[string]string{
+	"v1": {
+		"state":        "/v1/console/server/state",
+		"token":        "/v1/auth/login",
+		"list_ns":      "/v1/console/namespaces",
+		"ns":           "/v1/console/namespaces",
+		"cs":           "/v1/cs/configs",
+		"list_cs":      "/v1/cs/configs",
+		"user":         "/v1/auth/users",
+		"list_user":    "/v1/auth/users",
+		"role":         "/v1/auth/roles",
+		"list_role":    "/v1/auth/roles",
+		"perm":         "/v1/auth/permissions",
+		"list_perm":    "/v1/auth/permissions",
+		"service":      "/v1/ns/service",
+		"list_service": "/v1/ns/service/list",
+	},
+	"v3": {
+		"state":        "/v3/console/server/state",
+		"token":        "/v3/auth/user/login",
+		"list_ns":      "/v3/console/core/namespace/list",
+		"ns":           "/v3/console/core/namespace",
+		"cs":           "/v3/console/cs/config",
+		"list_cs":      "/v3/console/cs/config/list",
+		"list_user":    "/v3/auth/user/list",
+		"user":         "/v3/auth/user",
+		"list_role":    "/v3/auth/role/list",
+		"role":         "/v3/auth/role",
+		"perm":         "/v3/auth/permission",
+		"list_perm":    "/v3/auth/permission/list",
+		"service":      "/v3/ns/service",
+		"list_service": "/v3/ns/service/list",
+	},
+}
 
 type NamespaceList struct {
 	// Code    int         `json:"code,omitempty"`
