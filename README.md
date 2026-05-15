@@ -12,7 +12,10 @@ go get https://github.com/joelee2012/go-nacos
 # Example
 
 ```go
-client := NewNacosClient()
+client, err := nacos.NewClient()
+if err != nil {
+    log.Fatal(err)
+}
 opts := CreateCfgOpts{NamespaceID: "some-id", Group: "some-group", DataID: "some-data-id", Content: "config content"}
 client.CreateConfig(&opts)
 ```
