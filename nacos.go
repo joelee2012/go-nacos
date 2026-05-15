@@ -177,8 +177,11 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	}
 	v := url.Values{}
 	v.Add("accessToken", token)
-	namespaces := new(NamespaceList)
-	return namespaces, c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, namespaces)
+	var nss NamespaceList
+	if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, &nss); err != nil {
+		return nil, err
+	}
+	return &nss, nil
 }
 
 type NsOpts struct {
@@ -277,26 +280,25 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	v.Add("show", "all")
 	v.Add("accessToken", token)
 
-	var cfg *Configuration
-	if c.APIVersion == "v3" {
-		var v3 ConfigurationV3
-		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v3)
-		if v3.Data == nil {
-			return nil, ErrNotFound
-		}
-		cfg = v3.Data
-	} else {
+	if c.APIVersion == "v1" {
 		var v1 Configuration
-		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v1)
-		cfg = &v1
-	}
-	if err != nil {
-		if err == io.EOF {
-			return nil, ErrNotFound
+		if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v1); err != nil {
+			if err == io.EOF {
+				return nil, ErrNotFound
+			}
+			return nil, err
 		}
+		return &v1, nil
+	}
+	var v3 ConfigurationV3
+	if err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v3); err != nil {
 		return nil, err
 	}
-	return cfg, nil
+	if v3.Data == nil {
+		return nil, ErrNotFound
+	}
+	return v3.Data, nil
+
 }
 
 type ListCfgOpts struct {
@@ -334,11 +336,18 @@ func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*Configurat
 	v.Add("search", "accurate")
 	v.Add("accessToken", token)
 
-	cfgList := new(ConfigurationListV3)
-	if c.APIVersion == "v3" {
-		return &cfgList.Data, c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, cfgList)
+	if c.APIVersion == "v1" {
+		var v1 ConfigurationList
+		if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &v1); err != nil {
+			return nil, err
+		}
+		return &v1, nil
 	}
-	return &cfgList.Data, c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &cfgList.Data)
+	var v3 ConfigurationListV3
+	if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &v3); err != nil {
+		return nil, err
+	}
+	return &v3.Data, nil
 }
 
 func (c *Client) ListConfigInNs(ctx context.Context, namespace, group string) (*ConfigurationList, error) {
