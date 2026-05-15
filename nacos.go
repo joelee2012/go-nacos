@@ -113,13 +113,19 @@ func NewClient(urlStr, user, password string) (*Client, error) {
 }
 
 func (c *Client) getVersion(ctx context.Context) error {
+	var state State
 	if c.APIVersion != "" {
-		return c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &c.State)
+		if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &state); err != nil {
+			return err
+		}
+		c.State = &state
+		return nil
 	}
 	for _, ver := range []string{"v3", "v1"} {
-		err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &c.State)
-		if err == nil && c.State.Version != "" {
+		err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &state)
+		if err == nil && state.Version != "" {
 			c.APIVersion = ver
+			c.State = &state
 			return nil
 		}
 	}
@@ -154,10 +160,12 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	v := url.Values{}
 	v.Add("username", c.User)
 	v.Add("password", c.Password)
-	err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, &c.Token)
+	var token Token
+	err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, &token)
 	if err != nil {
 		return "", err
 	}
+	c.Token = &token
 	c.Token.ExpiredAt = time.Now().Unix() + c.Token.TokenTTL
 	return c.Token.AccessToken, nil
 }
@@ -273,6 +281,9 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	if c.APIVersion == "v3" {
 		var v3 ConfigurationV3
 		err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v3)
+		if v3.Data == nil {
+			return nil, ErrNotFound
+		}
 		cfg = v3.Data
 	} else {
 		var v1 Configuration
@@ -280,7 +291,7 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 		cfg = &v1
 	}
 	if err != nil {
-		if err == io.EOF || cfg == nil {
+		if err == io.EOF {
 			return nil, ErrNotFound
 		}
 		return nil, err
