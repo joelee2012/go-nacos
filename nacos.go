@@ -280,7 +280,7 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 		cfg = &v1
 	}
 	if err != nil {
-		if err == io.EOF {
+		if err == io.EOF || cfg == nil {
 			return nil, ErrNotFound
 		}
 		return nil, err
