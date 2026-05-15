@@ -84,8 +84,9 @@ var permList = newV1Data(permission)
 var permListV3 = newV3Data(permList)
 
 func TestNewClient(t *testing.T) {
-	c := NewClient("http://localhost:8848", "user", "password")
-	assert.Equal(t, "http://localhost:8848", c.URL)
+	c, err := NewClient("http://localhost:8848", "user", "password")
+	assert.NoError(t, err)
+	assert.Equal(t, "http://localhost:8848/", c.URL.String())
 	assert.Equal(t, "user", c.User)
 	assert.Equal(t, "password", c.Password)
 }
@@ -130,7 +131,7 @@ func startServer() (*httptest.Server, *Client) {
 			w.Write([]byte(permListV3))
 		}
 	}))
-	c := NewClient(ts.URL, "user", "password")
+	c, _ := NewClient(ts.URL, "user", "password")
 	return ts, c
 }
 
@@ -147,7 +148,7 @@ func TestGetVersion(t *testing.T) {
 	defer ts.Close()
 	for _, tt := range apiTests {
 		t.Run(tt.apiVersion, func(t *testing.T) {
-			c := NewClient(ts.URL, "user", "password")
+			c, _ := NewClient(ts.URL, "user", "password")
 			c.APIVersion = tt.apiVersion
 			version, err := c.GetVersion(context.Background())
 			if assert.NoError(t, err) {
@@ -157,7 +158,7 @@ func TestGetVersion(t *testing.T) {
 	}
 
 	t.Run("empty", func(t *testing.T) {
-		c := NewClient(ts.URL, "user", "password")
+		c, _ := NewClient(ts.URL, "user", "password")
 		version, err := c.GetVersion(context.Background())
 		if assert.NoError(t, err) {
 			assert.Equal(t, "3.0.0", version)
@@ -184,7 +185,7 @@ func TestGetToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := NewClient(tt.server.URL, "user", "password")
+			c, _ := NewClient(tt.server.URL, "user", "password")
 			token, err := c.GetToken(context.Background())
 			if tt.wantErr {
 				assert.Error(t, err)

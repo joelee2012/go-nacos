@@ -32,13 +32,16 @@ func createTestClient(t *testing.T) *nacos.Client {
 		host = "https://" + host
 	}
 
-	client := nacos.NewClient(host, user, password)
+	client, err := nacos.NewClient(host, user, password)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
 
 	// Verify client can connect
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := client.GetVersion(ctx)
+	_, err = client.GetVersion(ctx)
 	if err != nil {
 		t.Fatalf("Failed to initialize client: %v", err)
 	}
@@ -97,7 +100,7 @@ func TestAccNamespaceCRUD(t *testing.T) {
 
 	// Verify deletion
 	ns, err = client.GetNamespace(ctx, nsID)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, ns)
 }
 
@@ -174,7 +177,7 @@ func TestAccConfigCRUD(t *testing.T) {
 		NamespaceID: nsID,
 	})
 
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, cfg)
 }
 
@@ -200,7 +203,7 @@ func TestAccUserCRUD(t *testing.T) {
 
 	// Verify deletion
 	user, err = client.GetUser(ctx, username)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, user)
 }
 
@@ -235,7 +238,7 @@ func TestAccRoleCRUD(t *testing.T) {
 
 	// Verify deletion
 	role, err = client.GetRole(ctx, roleName, username)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, role)
 }
 
@@ -279,6 +282,6 @@ func TestAccPermissionCRUD(t *testing.T) {
 
 	// Verify deletion
 	perm, err = client.GetPermission(ctx, roleName, resource, action)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, perm)
 }

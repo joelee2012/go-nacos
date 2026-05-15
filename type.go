@@ -15,13 +15,6 @@ limitations under the License.
 */
 package nacos
 
-import (
-	"context"
-	"net/http"
-	"net/url"
-	"strconv"
-)
-
 type NamespaceList struct {
 	// Code    int         `json:"code,omitempty"`
 	// Message string      `json:"message,omitempty"`
@@ -155,30 +148,4 @@ type Paginator[T any] interface {
 	All() []*T
 	NextPageNumber() int
 	IsEnd() bool
-}
-
-func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, endpoint string) (*List[T], error) {
-	token, err := c.GetToken(ctx)
-	if err != nil {
-		return nil, err
-	}
-	all := new(List[T])
-	v := url.Values{}
-	v.Add("search", "accurate")
-	v.Add("accessToken", token)
-	v.Add("pageNo", "1")
-	v.Add("pageSize", "100")
-	for {
-		var lst L
-		resp, err := c.doRequest(ctx, http.MethodGet, endpoint, v, nil)
-		if err := decode(resp, err, &lst); err != nil {
-			return nil, err
-		}
-		all.Items = append(all.Items, lst.All()...)
-		if lst.IsEnd() {
-			break
-		}
-		v.Set("pageNo", strconv.Itoa(lst.NextPageNumber()))
-	}
-	return all, nil
 }
