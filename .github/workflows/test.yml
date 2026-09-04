@@ -20,6 +20,7 @@ jobs:
           - "v2.4.3"
           - "v2.5.1"
           - "v3.1.0"
+          - "v3.2.0"
     steps:
       - name: checkout
         uses: actions/checkout@v7
