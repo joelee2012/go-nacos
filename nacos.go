@@ -16,17 +16,68 @@ import (
 )
 
 type Client struct {
-	URL        *url.URL
-	User       string
-	Password   string
-	APIVersion string
-	HTTPClient *http.Client
-	Token      *Token
-	State      *State
-	mu         sync.Mutex
-	detectOnce sync.Once
-	detectErr  error
+	url        *url.URL
+	user       string
+	password   string
+	httpClient *http.Client
+	token      *Token
+	state      *State
+	apiVersion string
+	mu         sync.RWMutex // protects token refresh
+	initMu     sync.Mutex   // protects Init; apiVersion/state are read-only after Init
 }
+
+// Option configures a Client at construction time.
+type Option func(*Client)
+
+// WithHTTPClient overrides the default *http.Client (30s timeout) used for
+// requests to the Nacos server. Passing a nil client is a no-op so callers
+// can't accidentally disable transport.
+func WithHTTPClient(hc *http.Client) Option {
+	return func(c *Client) {
+		if hc != nil {
+			c.httpClient = hc
+		}
+	}
+}
+
+// BaseURL returns the Nacos server base URL the client was constructed with
+// (e.g. "http://localhost:8848/"), without credentials. Use SetBaseURL to
+// repoint a client at runtime (for example to retry Init against a healthy
+// server after a transient failure).
+func (c *Client) BaseURL() string { return c.url.String() }
+
+// SetBaseURL repoints the client at a different Nacos server. It is meant
+// for recovery flows (e.g. retrying Init after a failed probe against a
+// down server). The URL must carry scheme and host; passing a value without
+// a trailing "/" is normalized the same way as in NewClient.
+//
+// SetBaseURL resets any cached apiVersion/state so the next call to
+// GetVersion/Init re-probes the new server; a cached token (if any) is kept
+// since re-auth happens lazily on the next request.
+func (c *Client) SetBaseURL(rawURL string) error {
+	if !strings.HasSuffix(rawURL, "/") {
+		rawURL += "/"
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	c.url = u
+	// Invalidate the detected version/state so Init re-probes the new server.
+	c.apiVersion = ""
+	c.state = nil
+	return nil
+}
+
+// HTTPClient returns the *http.Client used for requests to the Nacos server.
+// The returned pointer is shared with the client; do not mutate its Transport
+// concurrently with in-flight requests. Use WithHTTPClient at construction to
+// supply a custom client.
+func (c *Client) HTTPClient() *http.Client { return c.httpClient }
+
 type Token struct {
 	AccessToken string `json:"accessToken"`
 	TokenTTL    int64  `json:"tokenTtl"`
@@ -45,7 +96,14 @@ type State struct {
 	FunctionMode   string `json:"function_mode"`
 }
 
-func NewClient(urlStr, user, password string) (*Client, error) {
+// NewClient creates a Nacos client targeting urlStr (scheme + host required,
+// e.g. "http://localhost:8848"). The returned client is not ready for use
+// until Init has been called to detect the server's API version.
+//
+// Optional client configuration can be supplied via opts, e.g.
+//
+//	nacos.NewClient(host, user, pass, nacos.WithHTTPClient(myClient))
+func NewClient(urlStr, user, password string, opts ...Option) (*Client, error) {
 	if !strings.HasSuffix(urlStr, "/") {
 		urlStr += "/"
 	}
@@ -54,70 +112,99 @@ func NewClient(urlStr, user, password string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{
-		URL:        u,
-		User:       user,
-		Password:   password,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
-	}, nil
+	c := &Client{
+		url:        u,
+		user:       user,
+		password:   password,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c, nil
 }
 
 func (c *Client) getVersion(ctx context.Context) error {
 	var state State
-	if c.APIVersion != "" {
-		if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["state"], nil, &state); err != nil {
+	if c.apiVersion != "" {
+		if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["state"], nil, &state); err != nil {
 			return err
 		}
-		c.State = &state
+		c.state = &state
 		return nil
 	}
 	for _, ver := range []string{"v3", "v1"} {
 		err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &state)
 		if err == nil && state.Version != "" {
-			c.APIVersion = ver
-			c.State = &state
+			c.apiVersion = ver
+			c.state = &state
 			return nil
 		}
 	}
 	return fmt.Errorf("unable to get api version")
 }
 
-func (c *Client) GetVersion(ctx context.Context) (string, error) {
-	c.detectOnce.Do(func() {
-		c.detectErr = c.getVersion(ctx)
-	})
-	if c.detectErr != nil {
-		return "", c.detectErr
+// Init probes the Nacos server once to detect the API version and populate
+// State. It must be called — and complete — before any concurrent use of the
+// client. It is idempotent: a call after a successful Init is a no-op. A
+// failed Init does not mark the client as initialized, so retrying is safe.
+//
+// After Init completes, c.apiVersion and c.state are read-only, so the read
+// path (GetToken and all resource methods) needs no synchronization for them.
+func (c *Client) Init(ctx context.Context) error {
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	if c.apiVersion != "" {
+		return nil
 	}
-	return c.State.Version, nil
+	return c.getVersion(ctx)
+}
+
+// GetVersion returns the cached Nacos server version. It performs no I/O and
+// requires Init to have completed; without it returns ErrNotInitialized.
+func (c *Client) GetVersion(ctx context.Context) (string, error) {
+	if c.apiVersion == "" {
+		return "", ErrNotInitialized
+	}
+	return c.state.Version, nil
 }
 
 func (c *Client) GetToken(ctx context.Context) (string, error) {
-	if _, err := c.GetVersion(ctx); err != nil {
-		return "", err
+	if c.apiVersion == "" {
+		return "", ErrNotInitialized
 	}
-	if c.Token != nil && !c.Token.Expired() {
-		return c.Token.AccessToken, nil
+	// fast path: snapshot the token pointer under RLock so it is
+	// race-free with concurrent refresh. The pointed-to *Token is never
+	// mutated in place after publication (refresh builds a new object),
+	// so reading its fields after releasing the lock is safe.
+	c.mu.RLock()
+	tok := c.token
+	c.mu.RUnlock()
+	if tok != nil && !tok.Expired() {
+		return tok.AccessToken, nil
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.Token != nil && !c.Token.Expired() {
-		return c.Token.AccessToken, nil
+	// double-check under the write lock
+	if c.token != nil && !c.token.Expired() {
+		return c.token.AccessToken, nil
 	}
 
 	v := url.Values{}
-	v.Add("username", c.User)
-	v.Add("password", c.Password)
+	v.Add("username", c.user)
+	v.Add("password", c.password)
 	var token Token
-	err := c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["token"], v, &token)
-	if err != nil {
+	if err := c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["token"], v, &token); err != nil {
 		return "", err
 	}
-	c.Token = &token
-	c.Token.ExpiredAt = time.Now().Unix() + c.Token.TokenTTL
-	return c.Token.AccessToken, nil
+	// fully initialize the token before publishing the pointer, so a
+	// fast-path reader can never observe a half-written token (e.g.
+	// ExpiredAt == 0, which would spuriously read as "expired").
+	token.ExpiredAt = time.Now().Unix() + token.TokenTTL
+	c.token = &token
+	return token.AccessToken, nil
 }
 
 func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
@@ -128,7 +215,7 @@ func (c *Client) ListNamespace(ctx context.Context) (*NamespaceList, error) {
 	v := url.Values{}
 	v.Add("accessToken", token)
 	var nss NamespaceList
-	if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_ns"], v, &nss); err != nil {
+	if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["list_ns"], v, &nss); err != nil {
 		return nil, err
 	}
 	return &nss, nil
@@ -150,7 +237,7 @@ func (c *Client) CreateNamespace(ctx context.Context, opts *NsOpts) error {
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["ns"], v, nil)
+	return c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["ns"], v, nil)
 }
 
 func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
@@ -161,7 +248,7 @@ func (c *Client) DeleteNamespace(ctx context.Context, id string) error {
 	v := url.Values{}
 	v.Add("namespaceId", id)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["ns"], v, nil)
+	return c.doRequest(ctx, http.MethodDelete, api[c.apiVersion]["ns"], v, nil)
 }
 
 func (c *Client) UpdateNamespace(ctx context.Context, opts *NsOpts) error {
@@ -176,7 +263,7 @@ func (c *Client) UpdateNamespace(ctx context.Context, opts *NsOpts) error {
 	v.Add("namespaceName", opts.Name)
 	v.Add("namespaceDesc", opts.Description)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodPut, api[c.APIVersion]["ns"], v, nil)
+	return c.doRequest(ctx, http.MethodPut, api[c.apiVersion]["ns"], v, nil)
 }
 
 func (c *Client) CreateOrUpdateNamespace(ctx context.Context, opts *NsOpts) error {
@@ -213,6 +300,8 @@ type GetCfgOpts struct {
 
 var ErrNotFound = errors.New("not found")
 
+var ErrNotInitialized = errors.New("nacos: client not initialized, call Init first")
+
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
 	if opts == nil {
 		return nil, errors.New("opts is nil")
@@ -230,9 +319,9 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	v.Add("show", "all")
 	v.Add("accessToken", token)
 
-	if c.APIVersion == "v1" {
+	if c.apiVersion == "v1" {
 		var v1 Configuration
-		if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v1); err != nil {
+		if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["cs"], v, &v1); err != nil {
 			if err == io.EOF {
 				return nil, ErrNotFound
 			}
@@ -241,7 +330,7 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 		return &v1, nil
 	}
 	var v3 ConfigurationV3
-	if err = c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["cs"], v, &v3); err != nil {
+	if err = c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["cs"], v, &v3); err != nil {
 		return nil, err
 	}
 	if v3.Data == nil {
@@ -273,28 +362,30 @@ func (c *Client) ListConfig(ctx context.Context, opts *ListCfgOpts) (*Configurat
 	v.Add("appName", opts.Application)
 	v.Add("config_tags", opts.Tags)
 	v.Add("configTags", opts.Tags)
-	if opts.PageNumber == 0 {
-		opts.PageNumber = 1
+	pageNo := opts.PageNumber
+	if pageNo == 0 {
+		pageNo = 1
 	}
-	if opts.PageSize == 0 {
-		opts.PageSize = 10
+	pageSize := opts.PageSize
+	if pageSize == 0 {
+		pageSize = 10
 	}
-	v.Add("pageNo", strconv.Itoa(opts.PageNumber))
-	v.Add("pageSize", strconv.Itoa(opts.PageSize))
+	v.Add("pageNo", strconv.Itoa(pageNo))
+	v.Add("pageSize", strconv.Itoa(pageSize))
 	v.Add("tenant", opts.NamespaceID)
 	v.Add("namespaceId", opts.NamespaceID)
 	v.Add("search", "accurate")
 	v.Add("accessToken", token)
 
-	if c.APIVersion == "v1" {
+	if c.apiVersion == "v1" {
 		var v1 ConfigurationList
-		if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &v1); err != nil {
+		if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["list_cs"], v, &v1); err != nil {
 			return nil, err
 		}
 		return &v1, nil
 	}
 	var v3 ConfigurationListV3
-	if err := c.doRequest(ctx, http.MethodGet, api[c.APIVersion]["list_cs"], v, &v3); err != nil {
+	if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["list_cs"], v, &v3); err != nil {
 		return nil, err
 	}
 	return &v3.Data, nil
@@ -362,7 +453,7 @@ func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
 	v.Add("config_tags", opts.Tags)
 	v.Add("configTags", opts.Tags)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["cs"], v, nil)
+	return c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["cs"], v, nil)
 }
 
 type DeleteCfgOpts = GetCfgOpts
@@ -380,7 +471,7 @@ func (c *Client) DeleteConfig(ctx context.Context, opts *DeleteCfgOpts) error {
 	v.Add("namespaceId", opts.NamespaceID)
 	v.Add("accessToken", token)
 
-	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["cs"], v, nil)
+	return c.doRequest(ctx, http.MethodDelete, api[c.apiVersion]["cs"], v, nil)
 }
 
 func (c *Client) CreateUser(ctx context.Context, name, password string) error {
@@ -392,7 +483,7 @@ func (c *Client) CreateUser(ctx context.Context, name, password string) error {
 	v.Add("username", name)
 	v.Add("password", password)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["user"], v, nil)
+	return c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["user"], v, nil)
 }
 
 func (c *Client) DeleteUser(ctx context.Context, name string) error {
@@ -403,14 +494,14 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 	v := url.Values{}
 	v.Add("username", name)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["user"], v, nil)
+	return c.doRequest(ctx, http.MethodDelete, api[c.apiVersion]["user"], v, nil)
 }
 
 func (c *Client) ListUser(ctx context.Context) (*UserList, error) {
-	if c.APIVersion == "v1" {
-		return listResource[UserList](ctx, c, api[c.APIVersion]["list_user"])
+	if c.apiVersion == "v1" {
+		return listResource[UserList](ctx, c, api[c.apiVersion]["list_user"])
 	}
-	return listResource[UserListV3](ctx, c, api[c.APIVersion]["list_user"])
+	return listResource[UserListV3](ctx, c, api[c.apiVersion]["list_user"])
 }
 
 func (c *Client) GetUser(ctx context.Context, name string) (*User, error) {
@@ -436,7 +527,7 @@ func (c *Client) CreateRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["role"], v, nil)
+	return c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["role"], v, nil)
 }
 
 func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
@@ -448,14 +539,14 @@ func (c *Client) DeleteRole(ctx context.Context, name, username string) error {
 	v.Add("username", username)
 	v.Add("role", name)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["role"], v, nil)
+	return c.doRequest(ctx, http.MethodDelete, api[c.apiVersion]["role"], v, nil)
 }
 
 func (c *Client) ListRole(ctx context.Context) (*RoleList, error) {
-	if c.APIVersion == "v1" {
-		return listResource[RoleList](ctx, c, api[c.APIVersion]["list_role"])
+	if c.apiVersion == "v1" {
+		return listResource[RoleList](ctx, c, api[c.apiVersion]["list_role"])
 	}
-	return listResource[RoleListV3](ctx, c, api[c.APIVersion]["list_role"])
+	return listResource[RoleListV3](ctx, c, api[c.apiVersion]["list_role"])
 }
 
 func (c *Client) GetRole(ctx context.Context, name, username string) (*Role, error) {
@@ -480,7 +571,7 @@ func (c *Client) CreatePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodPost, api[c.APIVersion]["perm"], v, nil)
+	return c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["perm"], v, nil)
 }
 
 func (c *Client) DeletePermission(ctx context.Context, role, resource, permission string) error {
@@ -493,14 +584,14 @@ func (c *Client) DeletePermission(ctx context.Context, role, resource, permissio
 	v.Add("resource", resource)
 	v.Add("role", role)
 	v.Add("accessToken", token)
-	return c.doRequest(ctx, http.MethodDelete, api[c.APIVersion]["perm"], v, nil)
+	return c.doRequest(ctx, http.MethodDelete, api[c.apiVersion]["perm"], v, nil)
 }
 
 func (c *Client) ListPermission(ctx context.Context) (*PermissionList, error) {
-	if c.APIVersion == "v1" {
-		return listResource[PermissionList](ctx, c, api[c.APIVersion]["list_perm"])
+	if c.apiVersion == "v1" {
+		return listResource[PermissionList](ctx, c, api[c.apiVersion]["list_perm"])
 	}
-	return listResource[PermissionListV3](ctx, c, api[c.APIVersion]["list_perm"])
+	return listResource[PermissionListV3](ctx, c, api[c.apiVersion]["list_perm"])
 }
 
 func (c *Client) GetPermission(ctx context.Context, role, resource, action string) (*Permission, error) {
@@ -541,7 +632,7 @@ func listResource[L Paginator[T], T ListTypes](ctx context.Context, c *Client, e
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, values url.Values, v any) error {
-	newUrl := c.URL.JoinPath(path)
+	newUrl := c.url.JoinPath(path)
 	reqHeaders := make(http.Header)
 	var body io.Reader
 	if values != nil {
@@ -560,7 +651,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 
 	maps.Copy(req.Header, reqHeaders)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -596,6 +687,16 @@ func (e NacosErr) Error() string {
 func (e NacosErr) Unwrap() error {
 	return e.Err
 }
+
+// Is reports whether the error matches target. A NacosErr carrying an HTTP
+// 404 matches ErrNotFound, so callers can uniformly check absence with
+// errors.Is(err, nacos.ErrNotFound) regardless of whether the not-found
+// result came from the server (404 response) or a client-side absence check
+// (e.g. an item missing from a listed page).
+func (e NacosErr) Is(target error) bool {
+	return target == ErrNotFound && e.Code == http.StatusNotFound
+}
+
 func (e NacosErr) IsNotFound() bool {
 	return e.Code == http.StatusNotFound
 }
