@@ -46,7 +46,7 @@
 - [ ] **`DeleteCfgOpts` 类型别名**：`type DeleteCfgOpts = GetCfgOpts` 语义不清
   - 直接使用 `GetCfgOpts` 或定义独立类型
   - 文件：`nacos.go:375`
-- [ ] **部分方法缺少双版本测试**：`TestCreateConfig`/`TestDeleteConfig`/`TestCreateUser` 等未覆盖 v1/v3
+- [ ] **部分方法缺少双版本测试**：`TestPublishConfig`/`TestDeleteConfig`/`TestCreateUser` 等未覆盖 v1/v3
   - 文件：`nacos_test.go:340-385`
 - [ ] **测试共享 Client 状态**：测试间复用同一 Client 实例，Token/State 可能相互污染
   - 每个子测试创建独立的 `startServer()` + Client

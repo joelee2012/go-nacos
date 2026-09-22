@@ -393,12 +393,12 @@ func TestListAllConfig(t *testing.T) {
 	}
 }
 
-func TestCreateConfig(t *testing.T) {
+func TestPublishConfig(t *testing.T) {
 	ts, c := startServer()
 	defer ts.Close()
 	c.apiVersion = "v1"
 
-	err := c.CreateConfig(context.Background(), &CreateCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
+	err := c.PublishConfig(context.Background(), &PublishCfgOpts{DataID: "test", Group: "DEFAULT_GROUP", Content: "test content", NamespaceID: "test-tenant", Type: "properties"})
 	assert.NoError(t, err)
 }
 

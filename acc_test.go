@@ -129,7 +129,7 @@ func TestAccConfigCRUD(t *testing.T) {
 	// Create config
 	cfgDataID := "test-config" + randomID()
 	cfgContent := "test.key=test.value"
-	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+	err = client.PublishConfig(ctx, &nacos.PublishCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
@@ -149,7 +149,7 @@ func TestAccConfigCRUD(t *testing.T) {
 
 	// Update config
 	updatedContent := "test.key=updated.value"
-	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+	err = client.PublishConfig(ctx, &nacos.PublishCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,

@@ -424,7 +424,7 @@ func (c *Client) ListAllConfig(ctx context.Context) (*ConfigurationList, error) 
 	return allCs, nil
 }
 
-type CreateCfgOpts struct {
+type PublishCfgOpts struct {
 	Application string
 	Content     string
 	DataID      string
@@ -435,7 +435,7 @@ type CreateCfgOpts struct {
 	Type        string
 }
 
-func (c *Client) CreateConfig(ctx context.Context, opts *CreateCfgOpts) error {
+func (c *Client) PublishConfig(ctx context.Context, opts *PublishCfgOpts) error {
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return err
