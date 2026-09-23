@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,9 +31,8 @@ type Client struct {
 // Option configures a Client at construction time.
 type Option func(*Client)
 
-// WithHTTPClient overrides the default *http.Client (30s timeout) used for
-// requests to the Nacos server. Passing a nil client is a no-op so callers
-// can't accidentally disable transport.
+// WithHTTPClient overrides the default *http.Client (30s timeout). Passing
+// nil is a no-op.
 func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) {
 		if hc != nil {
@@ -41,24 +41,17 @@ func WithHTTPClient(hc *http.Client) Option {
 	}
 }
 
-// WithAPIVersion pins the Nacos API version, skipping the
-// /console/server/state probe performed by Init. Use it when the server
-// restricts access to the state endpoint. version must be "v1" or "v3";
-// an unsupported value is rejected by NewClient as ErrInvalidAPIVersion.
-//
-// When the version is pinned, Init is a no-op and GetVersion returns
-// ("", nil) since the server version is not probed.
+// WithAPIVersion pins the API version, skipping the /console/server/state
+// probe. Use it when the server restricts that endpoint; version must be
+// "v1" or "v3" (else NewClient returns ErrInvalidAPIVersion). When pinned,
+// Init is a no-op and GetVersion returns ("", nil).
 func WithAPIVersion(version string) Option {
 	return func(c *Client) { c.apiVersion = version }
 }
 
-// NewClient creates a Nacos client targeting urlStr (scheme + host required,
-// e.g. "http://localhost:8848"). The returned client is not ready for use
-// until Init has been called to detect the server's API version.
-//
-// Optional client configuration can be supplied via opts, e.g.
-//
-//	nacos.NewClient(host, user, pass, nacos.WithHTTPClient(myClient))
+// NewClient creates a client targeting urlStr. The returned client is not
+// ready until Init has detected the server's API version (unless pinned via
+// WithAPIVersion).
 func NewClient(urlStr, user, password string, opts ...Option) (*Client, error) {
 	if !strings.HasSuffix(urlStr, "/") {
 		urlStr += "/"
@@ -77,19 +70,15 @@ func NewClient(urlStr, user, password string, opts ...Option) (*Client, error) {
 	for _, opt := range opts {
 		opt(c)
 	}
-	// An apiVersion pinned via WithAPIVersion must name a known version; an
-	// unsupported value would later index api[c.apiVersion][...] and return
-	// an empty path, producing confusing empty-endpoint requests.
-	if c.apiVersion != "" && api[c.apiVersion] == nil {
+	// Validate a pinned version; "" means auto-detect and is allowed.
+	if c.apiVersion != "" && !slices.Contains(apiVersions, c.apiVersion) {
 		return nil, ErrInvalidAPIVersion
 	}
 	return c, nil
 }
 
-// HTTPClient returns the *http.Client used for requests to the Nacos server.
-// The returned pointer is shared with the client; do not mutate its Transport
-// concurrently with in-flight requests. Use WithHTTPClient at construction to
-// supply a custom client.
+// HTTPClient returns the underlying *http.Client (shared; use WithHTTPClient
+// at construction to customize).
 func (c *Client) HTTPClient() *http.Client { return c.httpClient }
 
 type Token struct {
@@ -110,46 +99,29 @@ type State struct {
 	FunctionMode   string `json:"function_mode"`
 }
 
-// getVersion probes v3 then v1 and records the first server that reports a
-// non-empty version. It is only called by Init, which serializes calls and
-// guarantees c.apiVersion == "" on entry, so it does not handle the pinned
-// case.
-func (c *Client) getVersion(ctx context.Context) error {
-	for _, ver := range []string{"v3", "v1"} {
-		// fresh state per probe so a partially-decoded prior response
-		// cannot leak fields into the next iteration's decode.
-		var state State
-		if err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &state); err == nil && state.Version != "" {
-			c.apiVersion = ver
-			c.state = &state
-			return nil
-		}
-	}
-	return fmt.Errorf("unable to get api version")
-}
-
-// Init probes the Nacos server once to detect the API version and populate
-// State. It must be called — and complete — before any concurrent use of the
-// client. It is idempotent: a call after a successful Init is a no-op. A
-// failed Init does not mark the client as initialized, so retrying is safe.
-// If the API version was pinned via WithAPIVersion, Init is a no-op and no
-// /console/server/state request is made.
-//
-// After Init completes, c.apiVersion and c.state are read-only, so the read
-// path (GetToken and all resource methods) needs no synchronization for them.
+// Init probes the server to detect the API version. Idempotent; a failed
+// Init does not mark the client initialized, so retrying is safe. With a
+// pinned version (WithAPIVersion) it is a no-op. After success, apiVersion
+// and state are read-only.
 func (c *Client) Init(ctx context.Context) error {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
 	if c.apiVersion != "" {
 		return nil
 	}
-	return c.getVersion(ctx)
+	for _, ver := range apiVersions {
+		var state State // fresh per probe to avoid cross-iteration field leakage
+		if err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &state); err == nil && state.Version != "" {
+			c.apiVersion = ver
+			c.state = &state
+			return nil
+		}
+	}
+	return ErrDetectAPIVersion
 }
 
-// GetVersion returns the cached Nacos server version. It performs no I/O and
-// requires Init to have completed; without it returns ErrNotInitialized.
-// When the version was pinned via WithAPIVersion (no probe), it returns
-// ("", nil) since the server version is unknown.
+// GetVersion returns the cached server version (no I/O). Requires Init; else
+// returns ErrNotInitialized. With a pinned version it returns ("", nil).
 func (c *Client) GetVersion(ctx context.Context) (string, error) {
 	if c.apiVersion == "" {
 		return "", ErrNotInitialized
@@ -164,10 +136,9 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	if c.apiVersion == "" {
 		return "", ErrNotInitialized
 	}
-	// fast path: snapshot the token pointer under RLock so it is
-	// race-free with concurrent refresh. The pointed-to *Token is never
-	// mutated in place after publication (refresh builds a new object),
-	// so reading its fields after releasing the lock is safe.
+	// Fast path: snapshot the token under RLock. The *Token is never mutated
+	// in place after publication (refresh builds a new object), so reading
+	// its fields after releasing the lock is race-free.
 	c.mu.RLock()
 	tok := c.token
 	c.mu.RUnlock()
@@ -178,8 +149,7 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// double-check under the write lock
-	if c.token != nil && !c.token.Expired() {
+	if c.token != nil && !c.token.Expired() { // double-check under write lock
 		return c.token.AccessToken, nil
 	}
 
@@ -190,9 +160,8 @@ func (c *Client) GetToken(ctx context.Context) (string, error) {
 	if err := c.doRequest(ctx, http.MethodPost, api[c.apiVersion]["token"], v, &token); err != nil {
 		return "", err
 	}
-	// fully initialize the token before publishing the pointer, so a
-	// fast-path reader can never observe a half-written token (e.g.
-	// ExpiredAt == 0, which would spuriously read as "expired").
+	// Set ExpiredAt before publishing so a fast-path reader never observes
+	// a half-written token (ExpiredAt == 0 would read as expired).
 	token.ExpiredAt = time.Now().Unix() + token.TokenTTL
 	c.token = &token
 	return token.AccessToken, nil
@@ -289,15 +258,19 @@ type GetCfgOpts struct {
 	NamespaceID string
 }
 
-var ErrNotFound = errors.New("not found")
+// ErrNotFound is returned when a looked-up resource is absent (server 404 or
+// missing from a listing).
+var ErrNotFound = errors.New("nacos: resource not found")
 
-// ErrNotInitialized is returned when a method is called before Init has
-// successfully detected the server's API version.
+// ErrNotInitialized is returned when a method is called before a successful
+// Init (and no pinned version).
 var ErrNotInitialized = errors.New("nacos: client not initialized, call Init first")
 
-// ErrInvalidAPIVersion is returned by NewClient when WithAPIVersion is given
-// a value that is not a known Nacos API version ("v1" or "v3").
+// ErrInvalidAPIVersion is returned by NewClient for an unknown WithAPIVersion.
 var ErrInvalidAPIVersion = errors.New("nacos: invalid api version")
+
+// ErrDetectAPIVersion is returned by Init when no version probe succeeds.
+var ErrDetectAPIVersion = errors.New("nacos: unable to detect api version")
 
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
 	if opts == nil {
@@ -653,47 +626,20 @@ func (c *Client) doRequest(ctx context.Context, method, path string, values url.
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		// no data or html data
-		if len(data) == 0 || data[0] == '<' {
-			return NacosErr{Code: resp.StatusCode, URL: newUrl.String()}
+		msg := strings.TrimSpace(string(data))
+		if msg == "" || msg[0] == '<' {
+			return fmt.Errorf("nacos: request failed: %d %s", resp.StatusCode, newUrl)
 		}
-		return NacosErr{Code: resp.StatusCode, URL: newUrl.String(), Err: errors.New(string(data))}
+		return fmt.Errorf("nacos: request failed: %d %s: %s", resp.StatusCode, newUrl, msg)
 	}
 	if v != nil {
 		err = json.NewDecoder(resp.Body).Decode(v)
 	}
 	return err
 
-}
-
-type NacosErr struct {
-	Code int
-	Err  error
-	URL  string
-}
-
-func (e NacosErr) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("%d %s %s", e.Code, e.URL, e.Err.Error())
-	}
-	return fmt.Sprintf("%d %s", e.Code, e.URL)
-}
-
-func (e NacosErr) Unwrap() error {
-	return e.Err
-}
-
-// Is reports whether the error matches target. A NacosErr carrying an HTTP
-// 404 matches ErrNotFound, so callers can uniformly check absence with
-// errors.Is(err, nacos.ErrNotFound) regardless of whether the not-found
-// result came from the server (404 response) or a client-side absence check
-// (e.g. an item missing from a listed page).
-func (e NacosErr) Is(target error) bool {
-	return target == ErrNotFound && e.Code == http.StatusNotFound
-}
-
-func (e NacosErr) IsNotFound() bool {
-	return e.Code == http.StatusNotFound
 }

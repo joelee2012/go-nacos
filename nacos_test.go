@@ -571,6 +571,8 @@ func TestInitRetryAfterFailure(t *testing.T) {
 	c, _ := NewClient(failServer.URL, "user", "password")
 	if err := c.Init(context.Background()); err == nil {
 		t.Fatal("expected first Init to fail")
+	} else {
+		assert.ErrorIs(t, err, ErrDetectAPIVersion)
 	}
 
 	// retry with a fresh client against a healthy server
@@ -713,23 +715,56 @@ func TestListConfigDoesNotMutateOpts(t *testing.T) {
 	assert.Equal(t, 0, opts.PageSize, "ListConfig must not mutate opts.PageSize")
 }
 
-// TestNacosErrNotFoundMatchesErrNotFound verifies the not-found contract is
-// unified: both a client-side absence (ErrNotFound sentinel) and a server-side
-// HTTP 404 (NacosErr{Code:404}) satisfy errors.Is(err, ErrNotFound).
-func TestNacosErrNotFoundMatchesErrNotFound(t *testing.T) {
-	t.Run("sentinel", func(t *testing.T) {
-		assert.True(t, errors.Is(ErrNotFound, ErrNotFound))
-	})
-	t.Run("http 404", func(t *testing.T) {
-		e := NacosErr{Code: http.StatusNotFound, URL: "http://example/x"}
-		assert.True(t, errors.Is(e, ErrNotFound), "404 NacosErr must match ErrNotFound")
-	})
-	t.Run("http 500 does not match", func(t *testing.T) {
-		e := NacosErr{Code: http.StatusInternalServerError, URL: "http://example/x"}
-		assert.False(t, errors.Is(e, ErrNotFound))
-	})
-	t.Run("IsNotFound still works", func(t *testing.T) {
-		e := NacosErr{Code: http.StatusNotFound}
-		assert.True(t, e.IsNotFound())
-	})
+// TestNotFoundMapping verifies the not-found contract: a server-side HTTP 404
+// surfaces as ErrNotFound (so callers can uniformly errors.Is(err, ErrNotFound)),
+// while a client-side absence (item missing from a listing) is also ErrNotFound.
+// A non-404 failure must NOT match ErrNotFound.
+func TestNotFoundMapping(t *testing.T) {
+	// server that 404s /cs/configs but serves the login endpoint
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/auth/login":
+			w.Write([]byte(`{"accessToken": "t", "tokenTtl": 3600}`))
+		case "/v1/cs/configs":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer ts.Close()
+
+	c, _ := NewClient(ts.URL, "u", "p", WithAPIVersion("v1"))
+
+	// 404 from server -> ErrNotFound.
+	_, err := c.GetConfig(context.Background(), &GetCfgOpts{DataID: "x", Group: "g"})
+	assert.ErrorIs(t, err, ErrNotFound)
+
+	// sentinel itself matches (sanity).
+	assert.True(t, errors.Is(ErrNotFound, ErrNotFound))
+}
+
+// TestRequestFailureNotNotFound verifies a 500 does NOT map to ErrNotFound
+// and surfaces the status code + body in the error message. It exercises
+// doRequest via GetConfig (login ok, then /cs returns 500).
+func TestRequestFailureNotNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/auth/login":
+			w.Write([]byte(`{"accessToken": "t", "tokenTtl": 3600}`))
+		case "/v1/cs/configs":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("server boom"))
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer ts.Close()
+
+	c, _ := NewClient(ts.URL, "u", "p", WithAPIVersion("v1"))
+	_, err := c.GetConfig(context.Background(), &GetCfgOpts{DataID: "x", Group: "g"})
+	if assert.Error(t, err) {
+		assert.NotErrorIs(t, err, ErrNotFound, "500 must not be not-found")
+		assert.Contains(t, err.Error(), "500")
+		assert.Contains(t, err.Error(), "server boom")
+	}
 }
