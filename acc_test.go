@@ -37,11 +37,11 @@ func createTestClient(t *testing.T) *nacos.Client {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	// Verify client can connect
+	// Verify client can connect and detect API version
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err = client.GetVersion(ctx)
+	err = client.Init(ctx)
 	if err != nil {
 		t.Fatalf("Failed to initialize client: %v", err)
 	}
@@ -57,9 +57,14 @@ func TestAccClientInitialization(t *testing.T) {
 	skipIfNotAcc(t)
 
 	client := createTestClient(t)
-	assert.NotEmpty(t, client.URL)
-	assert.NotEmpty(t, client.User)
-	assert.NotEmpty(t, client.Password)
+
+	// createTestClient already ran Init; verify the detected state is usable.
+	// user/password are unexported on purpose, so we assert behavior (a
+	// version is available) rather than reading credentials back.
+	version, err := client.GetVersion(context.Background())
+	if assert.NoError(t, err) {
+		assert.NotEmpty(t, version)
+	}
 }
 
 func TestAccNamespaceCRUD(t *testing.T) {
@@ -124,7 +129,7 @@ func TestAccConfigCRUD(t *testing.T) {
 	// Create config
 	cfgDataID := "test-config" + randomID()
 	cfgContent := "test.key=test.value"
-	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+	err = client.PublishConfig(ctx, &nacos.PublishCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,
@@ -144,7 +149,7 @@ func TestAccConfigCRUD(t *testing.T) {
 
 	// Update config
 	updatedContent := "test.key=updated.value"
-	err = client.CreateConfig(ctx, &nacos.CreateCfgOpts{
+	err = client.PublishConfig(ctx, &nacos.PublishCfgOpts{
 		DataID:      cfgDataID,
 		Group:       "DEFAULT_GROUP",
 		NamespaceID: nsID,

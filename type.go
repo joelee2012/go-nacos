@@ -1,5 +1,9 @@
 package nacos
 
+// apiVersions lists supported API versions in probe order (newest first);
+// it is also the legal set for WithAPIVersion (plus "", auto-detect).
+var apiVersions = []string{"v3", "v1"}
+
 var api = map[string]map[string]string{
 	"v1": {
 		"state":        "/v1/console/server/state",
@@ -36,8 +40,6 @@ var api = map[string]map[string]string{
 }
 
 type NamespaceList struct {
-	// Code    int         `json:"code,omitempty"`
-	// Message string      `json:"message,omitempty"`
 	Items []*Namespace `json:"data"`
 }
 
@@ -115,7 +117,7 @@ type List[T ListTypes] struct {
 	Items          []*T `json:"pageItems"`
 }
 
-func (lst *List[T]) Contains(other T) bool {
+func (lst List[T]) Contains(other T) bool {
 	for _, it := range lst.Items {
 		if *it == other {
 			return true
