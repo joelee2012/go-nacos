@@ -110,18 +110,16 @@ type State struct {
 	FunctionMode   string `json:"function_mode"`
 }
 
+// getVersion probes v3 then v1 and records the first server that reports a
+// non-empty version. It is only called by Init, which serializes calls and
+// guarantees c.apiVersion == "" on entry, so it does not handle the pinned
+// case.
 func (c *Client) getVersion(ctx context.Context) error {
-	var state State
-	if c.apiVersion != "" {
-		if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["state"], nil, &state); err != nil {
-			return err
-		}
-		c.state = &state
-		return nil
-	}
 	for _, ver := range []string{"v3", "v1"} {
-		err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &state)
-		if err == nil && state.Version != "" {
+		// fresh state per probe so a partially-decoded prior response
+		// cannot leak fields into the next iteration's decode.
+		var state State
+		if err := c.doRequest(ctx, http.MethodGet, api[ver]["state"], nil, &state); err == nil && state.Version != "" {
 			c.apiVersion = ver
 			c.state = &state
 			return nil
