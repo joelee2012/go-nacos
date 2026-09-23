@@ -1,3 +1,5 @@
+// Package nacos is a client for the Nacos config/registry server, supporting
+// both the v1 and v3 console APIs.
 package nacos
 
 import (
@@ -273,9 +275,6 @@ type GetCfgOpts struct {
 }
 
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
-	if opts == nil {
-		return nil, errors.New("opts is nil")
-	}
 	token, err := c.GetToken(ctx)
 	if err != nil {
 		return nil, err
@@ -292,7 +291,7 @@ func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuratio
 	if c.apiVersion == "v1" {
 		var v1 Configuration
 		if err := c.doRequest(ctx, http.MethodGet, api[c.apiVersion]["cs"], v, &v1); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil, ErrNotFound
 			}
 			return nil, err

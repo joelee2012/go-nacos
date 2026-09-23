@@ -117,7 +117,7 @@ type List[T ListTypes] struct {
 	Items          []*T `json:"pageItems"`
 }
 
-func (lst *List[T]) Contains(other T) bool {
+func (lst List[T]) Contains(other T) bool {
 	for _, it := range lst.Items {
 		if *it == other {
 			return true
