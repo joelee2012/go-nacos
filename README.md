@@ -75,6 +75,27 @@ client, err := nacos.NewClient(host, user, pass,
 | Option | Description |
 | --- | --- |
 | `WithHTTPClient(hc)` | Override the default `*http.Client` (30s timeout). Passing `nil` is a no-op. |
+| `WithAPIVersion(v)` | Pin the API version (`"v1"` or `"v3"`), skipping the `/console/server/state` auto-detection probe. |
+
+## Pinning the API version
+
+By default the client probes `/console/server/state` during `Init` to detect
+whether the server speaks the v1 or v3 console API. Some deployments restrict
+access to that endpoint; in that case pin the version with `WithAPIVersion` and
+`Init` becomes a no-op (no probe is made):
+
+```go
+client, err := nacos.NewClient(host, user, pass, nacos.WithAPIVersion("v3"))
+if err != nil {
+    log.Fatal(err)
+}
+// No Init() needed; resource methods work directly.
+cfg, err := client.GetConfig(ctx, opts)
+```
+
+Since no probe runs, `GetVersion` returns `("", nil)` (the server version is
+unknown). An unsupported version is rejected by `NewClient` as
+`nacos.ErrInvalidAPIVersion`.
 
 ## Not found
 
@@ -100,9 +121,8 @@ Calling any method before `Init` returns `nacos.ErrNotInitialized`.
 ### Lifecycle
 - `NewClient(urlStr, user, password string, opts ...Option) (*Client, error)`
 - `Init(ctx) error` — probe server, detect v1/v3 (idempotent; safe to retry after failure)
-- `GetVersion(ctx) (string, error)` — cached server version, no I/O
+- `GetVersion(ctx) (string, error)` — cached server version, no I/O (returns `"", nil` when pinned)
 - `GetToken(ctx) (string, error)` — access token (auto-refreshed)
-- `BaseURL() string` / `SetBaseURL(rawURL string) error` — read/redirect the server URL
 - `HTTPClient() *http.Client` — the underlying transport
 
 ### Namespace

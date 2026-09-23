@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -89,7 +90,7 @@ var permListV3 = newV3Data(permList)
 func TestNewClient(t *testing.T) {
 	c, err := NewClient("http://localhost:8848", "user", "password")
 	assert.NoError(t, err)
-	assert.Equal(t, "http://localhost:8848/", c.BaseURL())
+	assert.Equal(t, "http://localhost:8848/", c.url.String())
 	assert.Equal(t, "user", c.user)
 	assert.Equal(t, "password", c.password)
 }
@@ -558,8 +559,9 @@ func TestGetPermission(t *testing.T) {
 	}
 }
 
-// TestInitRetryAfterFailure verifies a failed Init does not poison the client:
-// repointing to a healthy server and retrying must succeed.
+// TestInitRetryAfterFailure verifies a failed Init does not poison the
+// process: constructing a fresh client against a healthy server and retrying
+// succeeds. (We don't reuse the same client — that's what NewClient is for.)
 func TestInitRetryAfterFailure(t *testing.T) {
 	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -571,17 +573,14 @@ func TestInitRetryAfterFailure(t *testing.T) {
 		t.Fatal("expected first Init to fail")
 	}
 
-	// retry against a healthy server
+	// retry with a fresh client against a healthy server
 	okServer, _ := startServer()
 	defer okServer.Close()
-	if err := c.SetBaseURL(okServer.URL); err != nil {
-		t.Fatalf("SetBaseURL: %v", err)
-	}
-
-	if err := c.Init(context.Background()); err != nil {
+	c2, _ := NewClient(okServer.URL, "user", "password")
+	if err := c2.Init(context.Background()); err != nil {
 		t.Fatalf("Init retry should succeed: %v", err)
 	}
-	version, err := c.GetVersion(context.Background())
+	version, err := c2.GetVersion(context.Background())
 	if assert.NoError(t, err) {
 		assert.Equal(t, "3.0.0", version)
 	}
@@ -642,27 +641,60 @@ func TestWithHTTPClient(t *testing.T) {
 	}
 }
 
-// TestSetBaseURL verifies repointing a client: the URL is normalized, and a
-// previously detected apiVersion/state is invalidated so the next Init re-probes.
-func TestSetBaseURL(t *testing.T) {
-	ts, c := startServer()
+// TestWithAPIVersion verifies pinning the API version skips the /state
+// probe: even when the server forbids /state, the pinned client can fetch a
+// token and config directly. It also covers the NewClient validation and the
+// GetVersion ("", nil) behavior.
+func TestWithAPIVersion(t *testing.T) {
+	// server that 403s the state probe but serves everything else (simulates
+	// an environment where /console/server/state is restricted).
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/console/server/state") {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		switch r.URL.Path {
+		case "/v3/auth/user/login":
+			w.Write([]byte(`{"accessToken": "tok", "tokenTtl": 3600}`))
+		case "/v3/console/cs/config":
+			w.Write([]byte(configV3))
+		}
+	}))
 	defer ts.Close()
-	c.apiVersion = "v1" // pretend a prior probe succeeded
-	c.state = &State{Version: "stale"}
 
-	// missing trailing slash is normalized.
-	if err := c.SetBaseURL("http://example.com:8848"); err != nil {
-		t.Fatalf("SetBaseURL: %v", err)
+	c, err := NewClient(ts.URL, "user", "password", WithAPIVersion("v3"))
+	if !assert.NoError(t, err) {
+		return
 	}
-	assert.Equal(t, "http://example.com:8848/", c.BaseURL())
-	assert.Equal(t, "", c.apiVersion, "SetBaseURL must invalidate apiVersion")
-	assert.Nil(t, c.state, "SetBaseURL must invalidate state")
+	assert.Equal(t, "v3", c.apiVersion)
 
-	// repointing to the live server and re-initing should detect v3.
-	if err := c.SetBaseURL(ts.URL); err != nil {
-		t.Fatalf("SetBaseURL: %v", err)
+	// Init must be a no-op and must NOT hit /state (which would 403).
+	assert.NoError(t, c.Init(context.Background()))
+
+	// version is unknown because no probe was performed.
+	ver, err := c.GetVersion(context.Background())
+	if assert.NoError(t, err) {
+		assert.Equal(t, "", ver, "pinned version must yield empty server version")
 	}
-	assert.Equal(t, ts.URL+"/", c.BaseURL())
+
+	// resource methods work directly without Init probing /state.
+	cfg, err := c.GetConfig(context.Background(), &GetCfgOpts{DataID: "test", Group: "DEFAULT_GROUP"})
+	if assert.NoError(t, err) {
+		assert.Equal(t, "test", cfg.DataID)
+	}
+}
+
+// TestWithAPIVersionInvalid verifies NewClient rejects an unsupported version.
+func TestWithAPIVersionInvalid(t *testing.T) {
+	_, err := NewClient("http://localhost:8848", "u", "p", WithAPIVersion("v2"))
+	assert.ErrorIs(t, err, ErrInvalidAPIVersion)
+
+	// empty string is the documented "auto-detect" sentinel, not invalid.
+	c, err := NewClient("http://localhost:8848", "u", "p", WithAPIVersion(""))
+	if assert.NoError(t, err) {
+		assert.Equal(t, "", c.apiVersion)
+	}
 }
 
 // TestListConfigDoesNotMutateOpts verifies ListConfig no longer writes defaults

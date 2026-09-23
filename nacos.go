@@ -41,59 +41,15 @@ func WithHTTPClient(hc *http.Client) Option {
 	}
 }
 
-// BaseURL returns the Nacos server base URL the client was constructed with
-// (e.g. "http://localhost:8848/"), without credentials. Use SetBaseURL to
-// repoint a client at runtime (for example to retry Init against a healthy
-// server after a transient failure).
-func (c *Client) BaseURL() string { return c.url.String() }
-
-// SetBaseURL repoints the client at a different Nacos server. It is meant
-// for recovery flows (e.g. retrying Init after a failed probe against a
-// down server). The URL must carry scheme and host; passing a value without
-// a trailing "/" is normalized the same way as in NewClient.
+// WithAPIVersion pins the Nacos API version, skipping the
+// /console/server/state probe performed by Init. Use it when the server
+// restricts access to the state endpoint. version must be "v1" or "v3";
+// an unsupported value is rejected by NewClient as ErrInvalidAPIVersion.
 //
-// SetBaseURL resets any cached apiVersion/state so the next call to
-// GetVersion/Init re-probes the new server; a cached token (if any) is kept
-// since re-auth happens lazily on the next request.
-func (c *Client) SetBaseURL(rawURL string) error {
-	if !strings.HasSuffix(rawURL, "/") {
-		rawURL += "/"
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return err
-	}
-	c.initMu.Lock()
-	defer c.initMu.Unlock()
-	c.url = u
-	// Invalidate the detected version/state so Init re-probes the new server.
-	c.apiVersion = ""
-	c.state = nil
-	return nil
-}
-
-// HTTPClient returns the *http.Client used for requests to the Nacos server.
-// The returned pointer is shared with the client; do not mutate its Transport
-// concurrently with in-flight requests. Use WithHTTPClient at construction to
-// supply a custom client.
-func (c *Client) HTTPClient() *http.Client { return c.httpClient }
-
-type Token struct {
-	AccessToken string `json:"accessToken"`
-	TokenTTL    int64  `json:"tokenTtl"`
-	GlobalAdmin bool   `json:"globalAdmin"`
-	Username    string `json:"username"`
-	ExpiredAt   int64
-}
-
-func (t *Token) Expired() bool {
-	return time.Now().After(time.Unix(t.ExpiredAt-30, 0))
-}
-
-type State struct {
-	Version        string `json:"version"`
-	StandaloneMode string `json:"standalone_mode"`
-	FunctionMode   string `json:"function_mode"`
+// When the version is pinned, Init is a no-op and GetVersion returns
+// ("", nil) since the server version is not probed.
+func WithAPIVersion(version string) Option {
+	return func(c *Client) { c.apiVersion = version }
 }
 
 // NewClient creates a Nacos client targeting urlStr (scheme + host required,
@@ -121,7 +77,37 @@ func NewClient(urlStr, user, password string, opts ...Option) (*Client, error) {
 	for _, opt := range opts {
 		opt(c)
 	}
+	// An apiVersion pinned via WithAPIVersion must name a known version; an
+	// unsupported value would later index api[c.apiVersion][...] and return
+	// an empty path, producing confusing empty-endpoint requests.
+	if c.apiVersion != "" && api[c.apiVersion] == nil {
+		return nil, ErrInvalidAPIVersion
+	}
 	return c, nil
+}
+
+// HTTPClient returns the *http.Client used for requests to the Nacos server.
+// The returned pointer is shared with the client; do not mutate its Transport
+// concurrently with in-flight requests. Use WithHTTPClient at construction to
+// supply a custom client.
+func (c *Client) HTTPClient() *http.Client { return c.httpClient }
+
+type Token struct {
+	AccessToken string `json:"accessToken"`
+	TokenTTL    int64  `json:"tokenTtl"`
+	GlobalAdmin bool   `json:"globalAdmin"`
+	Username    string `json:"username"`
+	ExpiredAt   int64
+}
+
+func (t *Token) Expired() bool {
+	return time.Now().After(time.Unix(t.ExpiredAt-30, 0))
+}
+
+type State struct {
+	Version        string `json:"version"`
+	StandaloneMode string `json:"standalone_mode"`
+	FunctionMode   string `json:"function_mode"`
 }
 
 func (c *Client) getVersion(ctx context.Context) error {
@@ -148,6 +134,8 @@ func (c *Client) getVersion(ctx context.Context) error {
 // State. It must be called — and complete — before any concurrent use of the
 // client. It is idempotent: a call after a successful Init is a no-op. A
 // failed Init does not mark the client as initialized, so retrying is safe.
+// If the API version was pinned via WithAPIVersion, Init is a no-op and no
+// /console/server/state request is made.
 //
 // After Init completes, c.apiVersion and c.state are read-only, so the read
 // path (GetToken and all resource methods) needs no synchronization for them.
@@ -162,9 +150,14 @@ func (c *Client) Init(ctx context.Context) error {
 
 // GetVersion returns the cached Nacos server version. It performs no I/O and
 // requires Init to have completed; without it returns ErrNotInitialized.
+// When the version was pinned via WithAPIVersion (no probe), it returns
+// ("", nil) since the server version is unknown.
 func (c *Client) GetVersion(ctx context.Context) (string, error) {
 	if c.apiVersion == "" {
 		return "", ErrNotInitialized
+	}
+	if c.state == nil {
+		return "", nil
 	}
 	return c.state.Version, nil
 }
@@ -300,7 +293,13 @@ type GetCfgOpts struct {
 
 var ErrNotFound = errors.New("not found")
 
+// ErrNotInitialized is returned when a method is called before Init has
+// successfully detected the server's API version.
 var ErrNotInitialized = errors.New("nacos: client not initialized, call Init first")
+
+// ErrInvalidAPIVersion is returned by NewClient when WithAPIVersion is given
+// a value that is not a known Nacos API version ("v1" or "v3").
+var ErrInvalidAPIVersion = errors.New("nacos: invalid api version")
 
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
 	if opts == nil {
