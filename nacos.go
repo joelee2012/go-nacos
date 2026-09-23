@@ -16,6 +16,20 @@ import (
 	"time"
 )
 
+// Sentinel errors. Check with errors.Is.
+var (
+	// ErrNotFound is returned when a looked-up resource is absent (server 404
+	// or missing from a listing).
+	ErrNotFound = errors.New("nacos: resource not found")
+	// ErrNotInitialized is returned when a method is called before a successful
+	// Init (and no pinned version).
+	ErrNotInitialized = errors.New("nacos: client not initialized, call Init first")
+	// ErrInvalidAPIVersion is returned by NewClient for an unknown WithAPIVersion.
+	ErrInvalidAPIVersion = errors.New("nacos: invalid api version")
+	// ErrDetectAPIVersion is returned by Init when no version probe succeeds.
+	ErrDetectAPIVersion = errors.New("nacos: unable to detect api version")
+)
+
 type Client struct {
 	url        *url.URL
 	user       string
@@ -257,20 +271,6 @@ type GetCfgOpts struct {
 	Group       string
 	NamespaceID string
 }
-
-// ErrNotFound is returned when a looked-up resource is absent (server 404 or
-// missing from a listing).
-var ErrNotFound = errors.New("nacos: resource not found")
-
-// ErrNotInitialized is returned when a method is called before a successful
-// Init (and no pinned version).
-var ErrNotInitialized = errors.New("nacos: client not initialized, call Init first")
-
-// ErrInvalidAPIVersion is returned by NewClient for an unknown WithAPIVersion.
-var ErrInvalidAPIVersion = errors.New("nacos: invalid api version")
-
-// ErrDetectAPIVersion is returned by Init when no version probe succeeds.
-var ErrDetectAPIVersion = errors.New("nacos: unable to detect api version")
 
 func (c *Client) GetConfig(ctx context.Context, opts *GetCfgOpts) (*Configuration, error) {
 	if opts == nil {
