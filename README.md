@@ -97,30 +97,36 @@ Since no probe runs, `GetVersion` returns `("", nil)` (the server version is
 unknown). An unsupported version is rejected by `NewClient` as
 `nacos.ErrInvalidAPIVersion`.
 
-## Not found
+## Errors
 
-Methods that look up a single resource (`GetConfig`, `GetNamespace`,
-`GetUser`, `GetRole`, `GetPermission`) return `(nil, nacos.ErrNotFound)` when
-the resource does not exist. A server-side HTTP 404 also satisfies
-`errors.Is`, so you can check absence uniformly:
+Sentinel errors (check with `errors.Is`):
+
+- `nacos.ErrNotFound` — a looked-up resource is absent, or the server
+  returned HTTP 404.
+- `nacos.ErrNotInitialized` — a method was called before a successful
+  `Init` (and no pinned version).
+- `nacos.ErrInvalidAPIVersion` — `WithAPIVersion` was given an unknown
+  version.
+- `nacos.ErrDetectAPIVersion` — `Init` found no working version probe.
+
+Other HTTP failures come back as a plain error whose message carries the
+status code, URL, and (when present) the response body:
 
 ```go
 cfg, err := client.GetConfig(ctx, opts)
 switch {
 case errors.Is(err, nacos.ErrNotFound):
-	// absent
+    // absent
 case err != nil:
-	// other error
+    // other failure, e.g. nacos: request failed: 401 http://...: unauthorized
 }
 ```
-
-Calling any method before `Init` returns `nacos.ErrNotInitialized`.
 
 ## API
 
 ### Lifecycle
 - `NewClient(urlStr, user, password string, opts ...Option) (*Client, error)`
-- `Init(ctx) error` — probe server, detect v1/v3 (idempotent; safe to retry after failure)
+- `Init(ctx) error` — probe server, detect v1/v3 (idempotent; fails with `ErrDetectAPIVersion` if no probe succeeds; no-op when version is pinned)
 - `GetVersion(ctx) (string, error)` — cached server version, no I/O (returns `"", nil` when pinned)
 - `GetToken(ctx) (string, error)` — access token (auto-refreshed)
 - `HTTPClient() *http.Client` — the underlying transport
