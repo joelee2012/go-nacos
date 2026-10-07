@@ -167,6 +167,36 @@ func TestGetVersion(t *testing.T) {
 	})
 }
 
+func TestGetAPIVersion(t *testing.T) {
+	t.Run("uninitialized", func(t *testing.T) {
+		c, _ := NewClient("http://localhost:8848", "user", "password")
+		_, err := c.GetAPIVersion()
+		assert.ErrorIs(t, err, ErrNotInitialized)
+	})
+
+	t.Run("after init", func(t *testing.T) {
+		ts, _ := startServer()
+		defer ts.Close()
+		c, _ := NewClient(ts.URL, "user", "password")
+		assert.NoError(t, c.Init(context.Background()))
+		ver, err := c.GetAPIVersion()
+		if assert.NoError(t, err) {
+			assert.Equal(t, "v3", ver) // v3 is probed first
+		}
+	})
+
+	t.Run("pinned", func(t *testing.T) {
+		c, err := NewClient("http://localhost:8848", "user", "password", WithAPIVersion("v1"))
+		if !assert.NoError(t, err) {
+			return
+		}
+		ver, err := c.GetAPIVersion()
+		if assert.NoError(t, err) {
+			assert.Equal(t, "v1", ver)
+		}
+	})
+}
+
 func TestInit(t *testing.T) {
 	t.Run("detects v3", func(t *testing.T) {
 		ts, _ := startServer()
