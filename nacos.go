@@ -148,6 +148,17 @@ func (c *Client) GetVersion(ctx context.Context) (string, error) {
 	return c.state.Version, nil
 }
 
+// GetAPIVersion returns the active API version ("v1" or "v3"), whether detected
+// by Init or pinned via WithAPIVersion. It performs no I/O. Returns
+// ErrNotInitialized when the version is unknown (auto-detect not yet run and
+// no pinned version).
+func (c *Client) GetAPIVersion() (string, error) {
+	if c.apiVersion == "" {
+		return "", ErrNotInitialized
+	}
+	return c.apiVersion, nil
+}
+
 func (c *Client) GetToken(ctx context.Context) (string, error) {
 	if c.apiVersion == "" {
 		return "", ErrNotInitialized
